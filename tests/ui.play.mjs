@@ -51,6 +51,7 @@ for (let g = 0; g < games; g++) {
       await shot(`ui-over-${g}`);
       await page.click('[data-review]');
       await page.waitForSelector('.sheet');
+      await page.waitForTimeout(400);   // let the sheet slide in before the picture
       await shot(`ui-review-${g}`);
       await page.click('.sheet [data-s="x"]');
       if (await overflow()) errors.push('horizontal overflow at game end');
@@ -69,9 +70,12 @@ for (let g = 0; g < games; g++) {
     if (pick.length) { await pick[0].click(); decisions++; continue; }
     const ex = await page.$$('[data-exam]');
     if (ex.length) { await ex[0].click(); decisions++; continue; }
-    const acts = await page.$$('.act:not([disabled])');
+    let acts = await page.$$('.act:not([disabled])');
     if (acts.length) {
-      if (decisions === 1) { await page.click('[data-hint]'); await shot('ui-hint'); }
+      if (decisions === 1 && !shots.some((p) => p.endsWith('ui-hint.png'))) {
+        await page.click('[data-hint]'); await shot('ui-hint');
+        acts = await page.$$('.act:not([disabled])');   // the hint redrew the screen
+      }
       const a = acts[Math.floor(rnd() * acts.length)];
       await a.click();
       await page.waitForTimeout(60);

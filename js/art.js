@@ -390,7 +390,7 @@
       s += '<text x="50" y="123.5" text-anchor="middle" font-family="' + FONT + '" font-weight="700" font-size="' + size + '" letter-spacing="0.3" fill="#e8eaf0"' + fit + '>' + c + '</text>';
       const tag = TAGS[c];
       const tfit = estWidth(tag, 6.6) * 0.9 > 90 ? ' textLength="90" lengthAdjust="spacingAndGlyphs"' : '';
-      s += '<text x="50" y="133.5" text-anchor="middle" font-family="' + FONT + '" font-weight="600" font-size="6.6" fill="' + p.line + '"' + tfit + '>' + esc(tag) + '</text>';
+      s += '<text class="sub" x="50" y="133.5" text-anchor="middle" font-family="' + FONT + '" font-weight="600" font-size="6.6" fill="' + p.line + '"' + tfit + '>' + esc(tag) + '</text>';
     }
     s += '</svg>';
     return s;

@@ -11,3 +11,9 @@
 - **Built:** 6-player table fits at 393px; bad room code shows "No room" instead of hanging; name fields keep focus; pair pick; hover only on real mouse; codes with spaces work; "Your turn" grammar + Watching names; Resume hides finished games; history Back. Also: Hard bots no longer loop forever (found by the desktop UI run), stats re-measured; online test flake traced to the test harness (two WebKit pages), fixed in the test.
 - **Verified:** node tests (engine 24, odds 9, table 4, ai 6, online 6); new ai loop test failed on the old AI (300 turns) then passed; WebKit UI play at 393px + 1280px; two-browser online game; QA scripts for Back/focus/pair/6-player.
 - **Open:** Tim's phone check.
+
+## 2026-10-20 — visual design pass (builder agent)
+- **Asked (Tim):** "review them again for design improvements especially visually."
+- **Built:** CSS-only polish (plus a `sub` class on the card-art subtitle): the stage is bigger and glows when it's your move, the game-over headline is big, hand cards are bigger, action labels are bigger with equal rows, the laptop setup is wider with bigger fan cards, table setup fits without scrolling, tap targets are at least 40px, and the settings rows are tighter. Also fixed a hang in `tests/ui.play.mjs` (the test tapped a stale button after Hint).
+- **Verified:** node tests (engine 24, odds 9, table 4, ai 6, online 6); `ui.play.mjs` 2/2 games at 393px and 1280px with no errors; before/after screenshots of every tab and 9 game states at both sizes; measured the table Start button above the tab bar (583 vs 601) and the 5-opponent game fitting (actions end at 593, tab bar at 601).
+- **Open:** Tim's phone check.

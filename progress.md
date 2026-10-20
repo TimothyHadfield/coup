@@ -1,7 +1,7 @@
 # Coup — progress
 
 ## START HERE
-Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-20 (QA fixes, browser Back, bot loop fix).
+Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-20 (visual design pass; before that QA fixes, browser Back, bot loop fix).
 
 ## Goal right now
 Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at it on his phone.
@@ -16,6 +16,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 | Table tab (real-table companion, friends' bluff habits by name) | Done, 4 tests (200 replayed games match the engine) |
 | Learn tab (rules in own words, odds calculator, measured data) | Done |
 | Online rooms (any seat friend or computer, reload resumes) | Done, node tests + real two-browser run |
+| Visual design pass (2026-10-20) | Done: CSS block at the end of `styles.css` ("design pass") |
 | Live | https://timothyhadfield.github.io/coup/ |
 
 **Measured strength** (`data/stats.json`, `node tools/hands.js`, 2026-10-20 after the loop fix, seats rotated): Hard vs Easy 83% (1000 games), Medium vs Easy 74%, Hard vs Medium 47/53 (a 2000-game recheck gave 51/49: head-to-head they're even), three-way Easy/Medium/Hard 11/33/55% (900 games). Seat data: first player 47% (2p), 35% (3p, fair 33%), 25% (4p), 25% (5p), 19% (6p). Avg turns 2p 12 · 4p 35 · 6p 57. Best start: Duke+Duke 70% in 3p Hard games; worst Captain+Contessa 20%.
@@ -34,6 +35,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Game ends the moment one player is left (the winner's last action may not pay out) — table test compares coins at turn starts.
 - Port 8731 belonged to another agent's server; use 18473.
 - Two WebKit pages in one test run: Playwright's "wait until stable" hangs (animation frames throttled), so `ui.online.mjs` taps with `force` and polls `waitForFunction` every 500 ms. That, not the app, was the "online game stalls" flake (measured 2026-10-20: 30-80 stuck taps per run, no move ever sent).
+- `ui.play.mjs` used to hang forever when its 2nd decision fell on an action turn (the Hint tap redrew the screen, then the stale button threw "not attached" in a loop). Fixed 2026-10-20 by re-querying after Hint.
 - `window.__coup.netLog` keeps the last 30 online snapshots/moves; the online test dumps it when stuck.
 - Hard bots used to loop forever (Assassinate vs bluffed Contessa between two last-card players, ~1.5% of games). Fixed by making repeat attacks into a past block less attractive; `ai.test.js` guards it (failed on the old AI: 300 turns).
 
@@ -46,10 +48,12 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Online: Opponents setting sets the seat count; host toggles each open seat friend/computer; open seats become computers at start; computers use the host's level. At game end all cards are revealed to everyone for the Review.
 - Online games don't count toward "Your wins".
 - Browser Back: closes an open sheet first, then returns to the previous tab (history entries per tab and sheet).
+- Design pass: the stage gets the space on phone (log shrinks), the stage glows blue whenever the move is yours (CSS `:has()`), game over shows the winner big and orange with the dead action grid hidden (kept in place), hand cards 78x109 on phone when there are 3 or fewer opponents, card subtitles hidden on small cards, laptop setup is wider with bigger fan cards, table setup fits 393px without scrolling, `.btn.small` 40px, `?` has a 42px hit area.
 - Table "Your 2 cards": tapping the same card twice picks a pair; at 5-6 players the player grid goes 3 across so Undo stays on screen.
 
 ## NOT verified
-- Real iPhone Safari (only WebKit headless at 393px).
+- Real iPhone Safari (only WebKit headless at 393px). The design pass relies on CSS `:has()` (Safari 15.4+).
+- With 4-5 opponents on phone, a speech bubble on a second-row opponent covers that opponent's name for a moment (from before the design pass; left alone).
 - Online with 3+ real people; host vanishing mid-game (handover is online.js's job, tested there).
 - Hard is only even with Medium head-to-head (tried 6 setting tweaks, all 46-54%); it's clearly best three-way and vs Easy.
 - A local game once stalled on a computer's turn with no error (desktop UI run, 2026-10-20, machine at 100% CPU from other agents). Root cause not found; a 3-second safety net now restarts the game loop (logs "game loop restarted" as a console warning, `window.__coup.revived` counts it).
