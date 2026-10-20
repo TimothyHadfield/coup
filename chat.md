@@ -17,3 +17,9 @@
 - **Built:** CSS-only polish (plus a `sub` class on the card-art subtitle): the stage is bigger and glows when it's your move, the game-over headline is big, hand cards are bigger, action labels are bigger with equal rows, the laptop setup is wider with bigger fan cards, table setup fits without scrolling, tap targets are at least 40px, and the settings rows are tighter. Also fixed a hang in `tests/ui.play.mjs` (the test tapped a stale button after Hint).
 - **Verified:** node tests (engine 24, odds 9, table 4, ai 6, online 6); `ui.play.mjs` 2/2 games at 393px and 1280px with no errors; before/after screenshots of every tab and 9 game states at both sizes; measured the table Start button above the tab bar (583 vs 601) and the 5-opponent game fitting (actions end at 593, tab bar at 601).
 - **Open:** Tim's phone check.
+
+## 2026-10-20 — sounds, celebrations, animations (builder agent)
+- **Asked (Tim):** "add opptional sounds … win celebrations, and other fun annimations … make sure everything is customizable in the settings".
+- **Built:** shared `js/fx.js` copied in; every engine event mapped to a sound + small animation (map in progress.md), deal sounds, your-turn chime, win confetti / lose fall, "big" star burst when you win a challenge, error sound for refused moves, Table-tab sounds; Settings gets a Sound & effects section styled like the other rows. No rules changed; online.js untouched.
+- **Verified:** new `tests/ui.fx.mjs` (3 WebKit games: all on, Sound off, Animations off) failed before the change (no FX), passes after; also failed when the turn chime and celebrate kind were deliberately broken. Node tests engine 24, odds 9, table 4, ai 6 pass; `ui.play.mjs` 2/2 games at 393px + 1/1 at 1280px, no errors; storage-blocked run, no errors; screenshots of Settings, mid-game and win confetti at both sizes.
+- **Open:** listening on a real phone; online sounds not run in a two-browser test.

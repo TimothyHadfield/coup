@@ -1,1 +1,1 @@
-window.COUP_BUILD = '2026-10-20.3';
+window.COUP_BUILD = '2026-10-20.4';

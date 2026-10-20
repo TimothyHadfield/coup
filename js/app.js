@@ -154,6 +154,7 @@
     for (const k in says) delete says[k];
     save();
     renderPlay();
+    fxDeal(s);
     run(GEN);
   }
   function quitGame() {
@@ -208,8 +209,94 @@
     noteEvents(s.events.slice(before));
     save();
   }
+  // ------------------------------------------------------------------ sound & effects
+  // Every sound and animation comes from the shared fx.js and obeys its switches in Settings.
+  // Events are turned into a short timeline (sound + animation per step), played after the
+  // screen has redrawn, so local games and online snapshots sound the same.
+  const FX = window.FX && window.FX.version ? window.FX : null;
+  if (FX) {
+    FX.init({ game: 'coup', accent: '#6ea8fe' });
+    // a raised hand: a short knock with a faint metallic ring
+    FX.define('block', (k) => { k.tone({ f: 300, f2: 220, dur: 0.09, vol: 0.32 }); k.noise({ f: 1800, q: 1.5, dur: 0.03, vol: 0.2 }); k.tone({ f: 1250, dur: 0.28, vol: 0.06, type: 'triangle', at: 0.03 }); }, 'moves');
+  }
+  const fxSp = () => (FX && FX.settings.animSpeed === 'fast' ? 0.55 : 1);
+  const seatEl = (p) => (p === ME ? $('#tab-play .me-row') : $(`#tab-play .opp[data-opp="${p}"]`));
+  const coinEl = (p) => (p === ME ? $('#tab-play .me-row .side .coin') : $(`#tab-play .opp[data-opp="${p}"] .coin`));
+  function sfx(name, who) { if (FX) FX.play(name, who != null && who !== ME ? { vol: 0.85 } : undefined); }
+  const anim = (fn) => { if (FX) try { fn(); } catch (e) { /* effects never break the game */ } };
+  function fxPlan(e, s) {
+    const P = [];
+    const add = (snd, who, fn) => P.push({ snd, who, fn });
+    const coinFx = (p, n, good) => { FX.floatText(coinEl(p), (good ? '+' : '−') + n, good ? 'var(--good)' : 'var(--bad)'); if (good) FX.pop(coinEl(p)); };
+    switch (e.t) {
+      case 'turn': if (e.p === ME) add('turn', ME, () => FX.pulse($('#tab-play .stage .t1'))); break;
+      case 'action':
+        if (e.action === 'coup') add('coins', e.p, () => { coinFx(e.p, 7, false); FX.pop(seatEl(e.target)); });
+        else if (e.action === 'assassinate') add('whoosh', e.p, () => { coinFx(e.p, 3, false); FX.pop(seatEl(e.target)); });
+        else if (e.claim) add('cardSlide', e.p, () => FX.pop(seatEl(e.p)));
+        break;
+      case 'block': add('block', e.p, () => FX.pop(seatEl(e.p))); break;
+      case 'challenge': {
+        const big = (e.by === ME && !e.truth) || (e.of === ME && e.truth);
+        add('stamp', e.by, () => { FX.flash(seatEl(e.of), 'var(--warm)'); if (big) FX.celebrate({ kind: 'big', at: $('#tab-play .stage') }); });
+        break;
+      }
+      case 'prove': add('cardFlip', e.p, () => FX.pop(seatEl(e.p))); add('shuffle', e.p); break;
+      case 'lose': add('cardFlip', e.p); add(e.reason === 'coup' ? 'explosion' : 'hit', e.p, () => { FX.shake(seatEl(e.p)); FX.flash(seatEl(e.p), 'var(--bad)'); }); break;
+      case 'out': add('sink', e.p); break;
+      case 'gain': add(e.n === 1 ? 'coin' : 'coins', e.p, () => coinFx(e.p, e.n, true)); break;
+      case 'refund': add('coin', e.p, () => coinFx(e.p, e.n, true)); break;
+      case 'steal':
+        if (e.n > 0) add('coins', e.p, () => { const a = coinEl(e.target), b = coinEl(e.p); coinFx(e.target, e.n, false); FX.flyTo(a, b).then(() => coinFx(e.p, e.n, true)); });
+        else add('miss', e.p);
+        break;
+      case 'fail': if (e.blocked) add('miss', e.p); break;
+      case 'exchange': add('shuffle', e.p, () => (e.p === ME ? $$('#tab-play .me-row .cardf:not(.dead)').forEach((c) => FX.pop(c)) : FX.pop(seatEl(e.p)))); break;
+      case 'shown': add('cardFlip', e.p); break;
+      case 'forced': add('shuffle', e.p); break;
+      case 'kept': add('cardSlide', e.p); break;
+      case 'win': add(null, e.p, () => fxGameOver(s, e.p)); break;
+    }
+    return P;
+  }
+  const $$ = (q) => Array.from(document.querySelectorAll(q));
+  let fxBusyUntil = 0;
+  function fxEvents(evs, s) {
+    if (!FX) return;
+    const steps = [];
+    for (const e of evs) steps.push(...fxPlan(e, s));
+    const keep = steps.slice(-10);   // a big online catch-up plays only its last moments
+    const gap = 150 * fxSp();
+    let t = Math.max(0, fxBusyUntil - Date.now());
+    keep.forEach((st) => {
+      setTimeout(() => { if (st.snd) sfx(st.snd, st.who); if (st.fn) anim(st.fn); }, t);
+      if (st.snd) t += gap;
+    });
+    fxBusyUntil = Date.now() + t;
+  }
+  // Game over: confetti and fanfare for you, a gentle fall when someone else wins.
+  function fxGameOver(s, w) {
+    if (!FX || w < 0) return;
+    if (w !== ME) { FX.celebrate({ kind: 'lose' }); return; }
+    const cols = s.players[w].cards.map((c) => c.c && COLORS[c.c]).filter(Boolean);
+    FX.celebrate({ kind: 'win', colors: cols.concat(['#f0b354', '#6ea8fe', '#e8eaf0']) });
+  }
+  // The deal: a shuffle, then each card lands; your chime if you start.
+  function fxDeal(s) {
+    if (!FX) return;
+    sfx('shuffle');
+    const cards = $$('#tab-play .me-row .cardf, #tab-play .opp .cardf');
+    const step = 70 * fxSp();
+    cards.forEach((c, i) => setTimeout(() => { sfx('cardDeal'); anim(() => FX.pop(c)); }, 480 * fxSp() + i * step));
+    fxBusyUntil = Date.now() + 480 * fxSp() + cards.length * step + 100;
+    const first = s.events.filter((e) => e.t === 'turn');
+    if (first.length === 1 && first[0].p === ME) fxEvents([first[0]], s);
+  }
+  function fxError(el) { sfx('error'); if (el) anim(() => FX.shake(el)); }
+
   // speech bubbles for what just happened
   function noteEvents(evs) {
+    if (G && G.s) { const s = G.s; setTimeout(() => fxEvents(evs, s), 0); }
     lastVisible = false;
     const now = Date.now();
     for (const e of evs) {
@@ -237,7 +324,7 @@
     }
     selAction = null;
     if (G.online) { netAct(d); return; }
-    try { step(d); } catch (e) { toast('That move is not allowed.'); return; }
+    try { step(d); } catch (e) { fxError(); toast('That move is not allowed.'); return; }
     renderPlay();
     run(GEN);
   }
@@ -596,7 +683,7 @@
     G.sent = true; renderPlay();
     const r = await NET.act(d);
     netLog({ t: 'act', d, ok: !!(r && r.ok) });
-    if (!r || !r.ok) { G.sent = false; toast((r && r.message) || 'That move did not go through.'); renderPlay(); }
+    if (!r || !r.ok) { G.sent = false; fxError(); toast((r && r.message) || 'That move did not go through.'); renderPlay(); }
   }
   // last few online events, for tests and bug reports (window.__coup.netLog)
   const NETLOG = [];
@@ -625,6 +712,7 @@
       G.sent = false;
       const evs = G.s.events;
       if (!fresh && evs.length > G.seen) noteEvents(evs.slice(G.seen));
+      if (fresh && evs.filter((e) => e.t === 'turn').length === 1 && evs.length <= 2) { const s0 = G.s; setTimeout(() => fxDeal(s0), 0); }   // a brand-new game: deal sounds
       G.seen = evs.length;
       G.over = snap.status === 'finished' || G.s.winner >= 0;
       const pd = G.s.pending;
@@ -895,10 +983,14 @@
       <div class="label" style="margin:16px 0 4px">Variants</div>
       <div class="setrow"><div class="k">Inquisitor<small>Replaces all 3 Ambassadors</small></div>${sw('inquisitor')}</div>
       <div class="setrow"><div class="k">2-player deal <button class="q" data-help="twodeal">?</button><small>Official setup for 1 opponent</small></div>${sw('twoDeal')}</div>
+      <div class="label" style="margin:16px 0 4px">Sound &amp; effects</div>
+      <div id="fxset"></div>
       <div class="label" style="margin:16px 0 4px">Your record</div>
       <div class="setrow"><div class="k" style="font-weight:400">${tot}</div><button class="btn small ghost" data-resetstats="1">Reset</button></div>
       <p class="build">Build ${esc(window.COUP_BUILD || '')} · <a href="../">More games</a></p>
     </div>`;
+    if (FX) FX.renderSettings($('#fxset'));
+    else $('#fxset').previousElementSibling.remove();
   }
 
   const HELP = {
@@ -956,7 +1048,7 @@
       if (ds.cancel) { selAction = null; renderPlay(); return; }
       if (ds.opp != null && pd.kind === 'action' && selAction) {
         const t = +ds.opp;
-        if (!E.alive(G.s.players[t])) return;
+        if (!E.alive(G.s.players[t])) { fxError(seatEl(t)); return; }
         human({ action: selAction, target: t }); return;
       }
       if (ds.ch != null && pd.kind === 'challenge') { human({ challenge: ds.ch === '1' }); return; }
@@ -1010,7 +1102,7 @@
     }
     if (ds.tback) { const tb = store.table; tb.partial = { actor: tb.partial.actor }; tAnswer = null; save(); renderTable(); return; }
     if (ds.tactor) { const tb = store.table; tb.partial = {}; tAnswer = null; save(); renderTable(); return; }
-    if (ds.tundo) { const tb = store.table; const last = tb.turns.pop(); tb.partial = last ? { actor: last.actor } : null; save(); renderTable(); toast('Last turn removed'); return; }
+    if (ds.tundo) { const tb = store.table; const last = tb.turns.pop(); tb.partial = last ? { actor: last.actor } : null; save(); renderTable(); if (last) sfx('slide'); toast('Last turn removed'); return; }
     if (ds.tnew) {
       confirmBox('New table?', 'This game moves to your history (it still counts toward each friend\'s bluff habits).', 'New table', () => {
         if (store.table && store.table.turns.length) { store.tableArchive = (store.tableArchive || []).concat([{ setup: store.table.setup, turns: store.table.turns }]).slice(-60); }
@@ -1030,6 +1122,10 @@
       const d = T.derive(tb.setup, tb.turns);
       tb.partial = { actor: d.next };
       toast('Turn saved');
+      save(); renderTable();
+      if (FX && d.winner >= 0) FX.celebrate({ kind: d.me < 0 ? 'big' : d.winner === d.me ? 'win' : 'lose', at: $('#tab-table .ask') });
+      else sfx('place');
+      return;
     }
     save(); renderTable();
   }
