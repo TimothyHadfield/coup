@@ -33,14 +33,15 @@ let decisions = 0, finished = 0;
 for (let g = 0; g < games; g++) {
   await page.click('[data-new]');
   const t0 = Date.now();
-  let took = false;
+  let took = false, done = false;
   while (Date.now() - t0 < 240000) {
     await page.waitForTimeout(120);
+    try {
     // a choose-cards sheet
     if (await page.$('.sheet .choose')) {
       const need = await page.evaluate(() => { const b = document.querySelector('.sheet [data-s="ok"]'); return b ? +b.textContent.match(/\/(\d)/)[1] : 0; });
       const cards = await page.$$('.sheet .choose [data-s]');
-      for (let k = 0; k < need; k++) await cards[k].click();
+      for (let k = 0; k < need; k++) await page.click(`.sheet .choose [data-s="c${k}"]`);
       if (!took) { await shot('ui-exchange'); took = true; }
       await page.click('.sheet [data-s="ok"]');
       decisions++; continue;
@@ -54,7 +55,7 @@ for (let g = 0; g < games; g++) {
       await page.click('.sheet [data-s="x"]');
       if (await overflow()) errors.push('horizontal overflow at game end');
       await page.click('[data-quit]');
-      break;
+      done = true; break;
     }
     const ch = await page.$$('[data-ch]');
     if (ch.length) {
@@ -78,6 +79,14 @@ for (let g = 0; g < games; g++) {
       if (tg.length) await tg[Math.floor(rnd() * tg.length)].click();
       decisions++; continue;
     }
+    } catch (e) { if (!/not attached|detached/i.test(e.message)) throw e; }   // the screen redrew mid-tap: look again
+  }
+  if (!done) {
+    await shot('ui-stuck-' + g);
+    const info = await page.evaluate(() => { const G = window.__coup.G; return G ? { turnNo: G.s.turnNo, pending: G.s.pending, coins: G.s.players.map((p) => p.coins), last: G.s.events.slice(-12).map((e) => e.t + ':' + e.p + (e.action ? ':' + e.action : '')) } : null; });
+    errors.push('game ' + g + ' did not finish: ' + JSON.stringify(info));
+    await page.evaluate(() => { localStorage.removeItem('coup:v1'); });
+    await page.reload(); await page.waitForTimeout(500);
   }
 }
 // visit every tab

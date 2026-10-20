@@ -243,7 +243,14 @@
     return post && post[p] ? post[p].has[char] : null;
   }
 
+  // "You takes" -> "You take", "Ava blocks You" -> "Ava blocks you", "You's" -> "Your"
+  const FIRST = { takes: 'take', steals: 'steal', assassinates: 'assassinate', exchanges: 'exchange', examines: 'examine', launches: 'launch', blocks: 'block', challenges: 'challenge', shows: 'show', loses: 'lose', is: 'are', gets: 'get', swaps: 'swap', makes: 'make', lets: 'let' };
   function logLine(e, s) {
+    const l = logLine3(e, s);
+    if (l) l.txt = l.txt.replace(/^You's /, 'Your ').replace(/^You (\w+)/, (m, w) => 'You ' + (FIRST[w] || w)).replace(/(\S) You(?=\W|$)/g, '$1 you');
+    return l;
+  }
+  function logLine3(e, s) {
     const nm = (i) => (i === ME ? 'You' : s.players[i].name);
     switch (e.t) {
       case 'action': {
