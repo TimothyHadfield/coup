@@ -23,3 +23,9 @@
 - **Built:** shared `js/fx.js` copied in; every engine event mapped to a sound + small animation (map in progress.md), deal sounds, your-turn chime, win confetti / lose fall, "big" star burst when you win a challenge, error sound for refused moves, Table-tab sounds; Settings gets a Sound & effects section styled like the other rows. No rules changed; online.js untouched.
 - **Verified:** new `tests/ui.fx.mjs` (3 WebKit games: all on, Sound off, Animations off) failed before the change (no FX), passes after; also failed when the turn chime and celebrate kind were deliberately broken. Node tests engine 24, odds 9, table 4, ai 6 pass; `ui.play.mjs` 2/2 games at 393px + 1/1 at 1280px, no errors; storage-blocked run, no errors; screenshots of Settings, mid-game and win confetti at both sizes.
 - **Open:** listening on a real phone; online sounds not run in a two-browser test.
+
+## 2026-10-20 — real-table look (builder agent)
+- **Asked (Tim):** make each game look like the real thing on a table, "like you're looking through a camera ... connected to a user's glasses".
+- **Built:** shared `_table` kit copied in; Play tab is now a wood table: Court deck stack and Treasury coin heap in the middle, opponents on an arc with name plates, your cards tilted in front of you with a coin pile, actions on a reference card; deals and returns fly to/from the deck, coins slide between players and the Treasury. fx.js re-copied (1.0.3). No rule changes.
+- **Verified:** engine 24, odds 9, table 4, online node test, `ui.play.mjs` (393 + 1280), `ui.fx.mjs`, `ui.online.mjs`; before/after shots of setup/mid/late/end at 393, 1280, 320 and 659 landscape with no errors, overflow, page scroll or off-screen buttons; Effects speed doesn't change the game Speed.
+- **Open:** reviewer sub-agent not run; Tim's phone check.

@@ -52,6 +52,7 @@
   function cardEl(ch, o) {
     o = o || {};
     const cls = ['cardf'];
+    const rot = o.rot ? ` style="rotate:${o.rot}deg"` : '';
     if (o.size) cls.push(o.size);
     if (ch && !o.flip) cls.push('up');
     if (o.dead) cls.push('dead');
@@ -59,10 +60,40 @@
     if (o.chosen) cls.push('chosen');
     const small = o.size === 'sm';
     const data = o.data ? Object.entries(o.data).map(([k, v]) => ` data-${k}="${esc(v)}"`).join('') : '';
-    return `<div class="${cls.join(' ')}"${data}${o.flip ? ' data-flip="1"' : ''} role="${o.pick ? 'button' : 'img'}" aria-label="${esc(ch || 'hidden card')}">` +
+    return `<div class="${cls.join(' ')}"${data}${rot}${o.flip ? ' data-flip="1"' : ''} role="${o.pick ? 'button' : 'img'}" aria-label="${esc(ch || 'hidden card')}">` +
       `<div class="in"><div class="back">${cardSVG(null)}</div><div class="face">${ch ? cardSVG(ch, small) : ''}</div></div></div>`;
   }
   const coin = (n) => `<span class="coin"><i></i>${n}</span>`;
+  // ------------------------------------------------------------------ the table (shared game-table kit, js/tablekit.js)
+  // Real coins in front of a player: short stacks of up to 5, at most 3 stacks drawn, the count beside them.
+  const TK = window.TABLE && window.TABLE.version ? window.TABLE : null;
+  function coinPile(n) {
+    const k = Math.min(n, 15), stacks = Math.max(1, Math.ceil(k / 5));
+    const coins = Array.from({ length: k }, (_, i) => `<i class="tbl-coin" style="--j:${Math.floor(i / 5)};--k:${i % 5}"></i>`).join('');
+    return `<span class="coin pile" aria-label="${n} coins"><span class="heap${k ? '' : ' none'}" style="--st:${stacks}">${coins}</span><b>${n}</b></span>`;
+  }
+  // The Treasury: a loose heap in the middle that shrinks as players take coins (50 coins in the box).
+  function treasuryHTML(s) {
+    const left = Math.max(0, 50 - s.players.reduce((a, p) => a + p.coins, 0));
+    const n = Math.min(16, Math.ceil(left / 3));
+    const coins = Array.from({ length: n }, (_, i) => {
+      const j = TK ? TK.jitter('treasury', i, { off: 13, rot: 40 }) : { x: 0, y: 0, r: 0 };
+      return `<i class="tbl-coin" style="left:calc(50% + ${j.x * 1.4}px);top:calc(50% + ${j.y}px);rotate:${j.r}deg;z-index:${i}"></i>`;
+    }).join('');
+    return `<div class="treasury" aria-label="Treasury, ${left} coins">${coins}</div>`;
+  }
+  // The Court deck: a real stack (thicker with more cards) showing the Coup card back.
+  function drawCourt(root) {
+    const el = root && root.querySelector('.court-deck');
+    if (!el || !G || !TK) return;
+    const n = (G.s.deck && G.s.deck.length) || 0;
+    TK.deck(el, n, { perCard: 0.6, max: 9 });
+    const top = el.querySelector('.tbl-back');
+    if (top) { top.classList.add('coup-back'); top.innerHTML = cardSVG(null); }
+  }
+  const backGhost = () => `<div class="tbl-card coup-back coup-ghost">${cardSVG(null)}</div>`;
+  // small stable tilt so cards lying on the table are never perfectly square
+  const tilt = (key, deg) => (TK ? TK.jitter(key, 0, { rot: deg, off: 0 }).r : 0);
   // red (unlikely) -> green (likely)
   function scale(p) {
     const h = Math.round(Math.max(0, Math.min(1, p)) * 125);
@@ -221,13 +252,33 @@
   }
   const fxSp = () => (FX && FX.settings.animSpeed === 'fast' ? 0.55 : 1);
   const seatEl = (p) => (p === ME ? $('#tab-play .me-row') : $(`#tab-play .opp[data-opp="${p}"]`));
-  const coinEl = (p) => (p === ME ? $('#tab-play .me-row .side .coin') : $(`#tab-play .opp[data-opp="${p}"] .coin`));
+  const coinEl = (p) => (p === ME ? $('#tab-play .me-row .coin') : $(`#tab-play .opp[data-opp="${p}"] .coin`));
   function sfx(name, who) { if (FX) FX.play(name, who != null && who !== ME ? { vol: 0.85 } : undefined); }
   const anim = (fn) => { if (FX) try { fn(); } catch (e) { /* effects never break the game */ } };
+  // physical moves on the table: coins go to and from the Treasury, cards to and from the Court deck
+  const deckEl = () => $('#tab-play .court-deck');
+  const bankEl = () => $('#tab-play .treasury');
+  const handEls = (p) => $$(p === ME ? '#tab-play .me-row .cardf:not(.dead)' : `#tab-play .opp[data-opp="${p}"] .cardf:not(.dead)`);
+  function dealTo(p, n) {
+    if (!TK || !deckEl()) return;
+    handEls(p).slice(0, n).forEach((h, k) => setTimeout(() => TK.deal(deckEl(), h, { face: backGhost(), duration: 360 }), k * 120 * fxSp()));
+  }
+  function toDeck(p, n) {
+    const d = deckEl(), hs = handEls(p).slice(0, n);
+    if (!d || !hs.length) return;
+    Promise.all(hs.map((h) => FX.flyTo(h, d))).then(() => anim(() => dealTo(p, n)));
+  }
+  function coinsMove(from, to) {
+    const a = from && (from.querySelector('.tbl-coin:last-child') || from);
+    if (a && to) FX.flyTo(a, to, { scale: 1 });
+  }
   function fxPlan(e, s) {
     const P = [];
     const add = (snd, who, fn) => P.push({ snd, who, fn });
-    const coinFx = (p, n, good) => { FX.floatText(coinEl(p), (good ? '+' : '−') + n, good ? 'var(--good)' : 'var(--bad)'); if (good) FX.pop(coinEl(p)); };
+    const coinFx = (p, n, good) => {
+      if (good) coinsMove(bankEl(), coinEl(p)); else coinsMove(coinEl(p), bankEl());
+      FX.floatText(coinEl(p), (good ? '+' : '−') + n, good ? 'var(--good)' : 'var(--bad)'); if (good) FX.pop(coinEl(p));
+    };
     switch (e.t) {
       case 'turn': if (e.p === ME) add('turn', ME, () => FX.pulse($('#tab-play .stage .t1'))); break;
       case 'action':
@@ -241,7 +292,7 @@
         add('stamp', e.by, () => { FX.flash(seatEl(e.of), 'var(--warm)'); if (big) FX.celebrate({ kind: 'big', at: $('#tab-play .stage') }); });
         break;
       }
-      case 'prove': add('cardFlip', e.p, () => FX.pop(seatEl(e.p))); add('shuffle', e.p); break;
+      case 'prove': add('cardFlip', e.p, () => FX.pop(seatEl(e.p))); add('shuffle', e.p, () => toDeck(e.p, 1)); break;
       case 'lose': add('cardFlip', e.p); add(e.reason === 'coup' ? 'explosion' : 'hit', e.p, () => { FX.shake(seatEl(e.p)); FX.flash(seatEl(e.p), 'var(--bad)'); }); break;
       case 'out': add('sink', e.p); break;
       case 'gain': add(e.n === 1 ? 'coin' : 'coins', e.p, () => coinFx(e.p, e.n, true)); break;
@@ -251,9 +302,9 @@
         else add('miss', e.p);
         break;
       case 'fail': if (e.blocked) add('miss', e.p); break;
-      case 'exchange': add('shuffle', e.p, () => (e.p === ME ? $$('#tab-play .me-row .cardf:not(.dead)').forEach((c) => FX.pop(c)) : FX.pop(seatEl(e.p)))); break;
+      case 'exchange': add('shuffle', e.p, () => { toDeck(e.p, 2); if (e.p !== ME) FX.pop(seatEl(e.p)); }); break;
       case 'shown': add('cardFlip', e.p); break;
-      case 'forced': add('shuffle', e.p); break;
+      case 'forced': add('shuffle', e.p, () => toDeck(e.p, 1)); break;
       case 'kept': add('cardSlide', e.p); break;
       case 'win': add(null, e.p, () => fxGameOver(s, e.p)); break;
     }
@@ -285,13 +336,32 @@
   function fxDeal(s) {
     if (!FX) return;
     sfx('shuffle');
-    const cards = $$('#tab-play .me-row .cardf, #tab-play .opp .cardf');
+    // dealt like at a real table: one card to each player in turn, then the second, each flying off the Court deck
+    // (cards are found again at each step: the screen may redraw while dealing; undealt ones stay hidden)
+    const order = [];
+    for (let k = 0; k < 2; k++) s.players.forEach((_, p) => order.push(p + ':' + k));
     const step = 70 * fxSp();
-    cards.forEach((c, i) => setTimeout(() => { sfx('cardDeal'); anim(() => FX.pop(c)); }, 480 * fxSp() + i * step));
+    const fly = !!(TK && deckEl() && TK.animOn());
+    const cards = order.map(dealCard).filter(Boolean);
+    if (fly) { order.forEach((key) => undealt.add(key)); hideUndealt(); }
+    order.forEach((key, i) => setTimeout(() => {
+      sfx('cardDeal');
+      const c = dealCard(key);
+      if (fly && c) TK.deal(deckEl(), c, { face: backGhost(), duration: 300 }).then(() => { undealt.delete(key); const now = dealCard(key); if (now) { now.style.opacity = ''; anim(() => FX.pop(now)); } });
+      else { undealt.delete(key); if (c) { c.style.opacity = ''; anim(() => FX.pop(c)); } }
+    }, 480 * fxSp() + i * step));
+    if (fly) setTimeout(() => { undealt.clear(); $$('#tab-play .cardf').forEach((c) => { c.style.opacity = ''; }); }, 480 * fxSp() + order.length * step + 1500);
+    if (!cards.length) undealt.clear();
     fxBusyUntil = Date.now() + 480 * fxSp() + cards.length * step + 100;
     const first = s.events.filter((e) => e.t === 'turn');
     if (first.length === 1 && first[0].p === ME) fxEvents([first[0]], s);
   }
+  const undealt = new Set();   // "p:k" cards still on their way from the deck
+  function dealCard(key) {
+    const [p, k] = key.split(':').map(Number);
+    return (p === ME ? $$('#tab-play .me-row .cardf') : $$(`#tab-play .opp[data-opp="${p}"] .cardf`))[k] || null;
+  }
+  function hideUndealt() { undealt.forEach((key) => { const c = dealCard(key); if (c) c.style.opacity = '0'; }); }
   function fxError(el) { sfx('error'); if (el) anim(() => FX.shake(el)); }
 
   // speech bubbles for what just happened
@@ -402,7 +472,7 @@
   function renderPlay() {
     const root = $('#tab-play');
     if (store.tab !== 'play') return;
-    if (!G) { root.innerHTML = NET && SNAP && SNAP.status !== 'none' ? lobbyHTML() : setupHTML(); return; }
+    if (!G) { root.innerHTML = `<div class="felt tbl-surface tbl-wood-dark">${NET && SNAP && SNAP.status !== 'none' ? lobbyHTML() : setupHTML()}</div>`; return; }
     if (!G.online && !G.over && !G.s.pending) { finish(); return; }   // the game just ended
     const s = G.s;
     const pd = s.pending;
@@ -411,7 +481,9 @@
     const now = Date.now();
     const chars = s.rules.chars;
 
-    // --- opponents
+    // --- opponents, seated round the far side (laptop: an arc, outer seats nearer to you)
+    const nOpp = s.players.length - 1;
+    const arc = TK ? (() => { const P = TK.seatPositions(nOpp), lo = Math.min(...P.map((q) => q.y)); return P.map((q) => +((q.y - lo) / 38).toFixed(3)); })() : [];
     const opps = s.players.map((pl, i) => {
       if (i === ME) return '';
       const isAlive = E.alive(pl);
@@ -421,9 +493,9 @@
         if (cd.dead) {
           const fresh = !shownDead.has(key);
           shownDead.add(key);
-          return cardEl(cd.c, { size: 'sm', dead: true, flip: fresh });
+          return cardEl(cd.c, { size: 'sm', dead: true, flip: fresh, rot: tilt(key, 9) });
         }
-        return cardEl(reveal ? cd.c : null, { size: 'sm' });
+        return cardEl(reveal ? cd.c : null, { size: 'sm', rot: tilt(i + ':' + k, 4) });
       }).join('');
       const bars = post && post[i] ? `<div class="bars" aria-label="odds">${chars.map((c) => `<div class="b" title="${c} ${pctTxt(post[i].has[c])}"><i style="height:${Math.round(post[i].has[c] * 100)}%;background:${COLORS[c]}"></i></div>`).join('')}</div>` : '';
       const sy = says[i] && says[i].until > now ? `<div class="say">${esc(says[i].text)}</div>` : '';
@@ -432,8 +504,9 @@
       const targeted = s.ctx && s.ctx.target === i && s.ctx.action;
       const seatInfo = G.online && SNAP && SNAP.seats ? SNAP.seats[i] : null;
       const away = seatInfo && seatInfo.kind === 'human' && !seatInfo.online ? ' <small class="away">away</small>' : '';
-      return `<div class="opp ${isTurn ? 'turn' : ''} ${isAlive ? '' : 'out'} ${targetable ? 'targetable' : ''} ${targeted ? 'targeted' : ''}" data-opp="${i}">
-        ${sy}<div class="top"><span class="nm">${esc(pl.name)}${away}</span>${coin(pl.coins)}</div>
+      const oi = i < ME ? i : i - 1;   // seat order round the far side of the table
+      return `<div class="opp ${isTurn ? 'turn' : ''} ${isAlive ? '' : 'out'} ${targetable ? 'targetable' : ''} ${targeted ? 'targeted' : ''}" data-opp="${i}" style="--arc:${arc[oi] || 0}">
+        ${sy}<div class="top"><span class="nm">${esc(pl.name)}${away}</span>${coinPile(pl.coins)}</div>
         <div class="mid"><div class="cards">${cards}</div>${bars}</div></div>`;
     }).join('');
 
@@ -446,9 +519,9 @@
       if (cd.dead) {
         const key = '0:' + k + ':' + cd.c;
         const fresh = !shownDead.has(key); shownDead.add(key);
-        return cardEl(cd.c, { dead: true, flip: false && fresh });
+        return cardEl(cd.c, { dead: true, flip: false && fresh, rot: k ? 7 : -8 });
       }
-      return cardEl(cd.c, { pick: pickMine, data: pickMine ? { card: k } : null });
+      return cardEl(cd.c, { pick: pickMine, data: pickMine ? { card: k } : null, rot: k ? 4 : -5 });
     }).join('');
     const canHint = myTurn && !G.over;
     // --- actions
@@ -469,15 +542,17 @@
       <div class="panel" style="margin:0"><h2>Odds <button class="q" data-help="odds" aria-label="Why these odds">?</button></h2>${oddsTable(post)}</div>
       <div class="log">${logHTML(s)}</div></div>`;
 
-    root.innerHTML = `<div class="playwrap"><div class="game">
+    root.innerHTML = `<div class="felt tbl-surface tbl-wood-dark"><div class="playwrap"><div class="game">
       <div class="opps">${opps}</div>
-      <div class="log">${logHTML(s)}</div>
-      <div class="stage">${stage}</div>
-      <div class="me-row"><div class="cards">${myCards}</div>
-        <div class="side">${coin(me.coins)}
+      <button class="log tlog" data-log="1" aria-label="Game log">${logHTML(s)}</button>
+      <div class="stage"><div class="court"><div class="court-deck" aria-label="Court deck"></div></div><div class="prompt">${stage}</div>${treasuryHTML(s)}</div>
+      <div class="me-row"><div class="cards">${myCards}</div>${coinPile(me.coins)}
+        <div class="side">
           <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}<button class="btn small ghost" data-quit="1">${G.online ? 'Leave' : G.over ? 'Close' : 'Quit'}</button></div></div></div>
-      <div class="actions">${acts}</div>
-    </div>${side}</div>`;
+      <div class="actions refcard">${acts}</div>
+    </div>${side}</div></div>`;
+    drawCourt(root);
+    if (undealt.size) hideUndealt();
 
     // flip in newly revealed cards
     requestAnimationFrame(() => requestAnimationFrame(() => root.querySelectorAll('[data-flip]').forEach((el) => el.classList.add('up'))));
@@ -1036,6 +1111,7 @@
       confirmBox('Quit this game?', 'It will count as unfinished.', 'Quit', quitGame); return;
     }
     if (ds.review) { openReview(); return; }
+    if (ds.log && G) { sheet(`<h3>Game log<button class="btn small ghost" data-s="x">Close</button></h3><div class="body"><div class="log full">${logHTML(G.s)}</div></div>`, () => closeSheet()); return; }
     // ---- play decisions
     if (G && G.s.pending && isHuman(G.s.pending.p)) {
       const pd = G.s.pending;

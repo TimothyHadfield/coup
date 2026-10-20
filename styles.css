@@ -110,7 +110,7 @@ input[type=text] { background: var(--bg-soft); border: 1px solid var(--line); co
 .fallback-card { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 12px; color: #fff; }
 
 .coin { display: inline-flex; align-items: center; gap: 4px; font-weight: 750; font-variant-numeric: tabular-nums; }
-.coin i { width: 15px; height: 15px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe08a, #e0a43a 60%, #a8741d); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.18); display: inline-block; }
+.coin:not(.pile) i { width: 15px; height: 15px; border-radius: 50%; background: radial-gradient(circle at 35% 35%, #ffe08a, #e0a43a 60%, #a8741d); box-shadow: inset 0 0 0 1.5px rgba(0,0,0,.18); display: inline-block; }
 
 /* ------------------------------------------------------------- play: setup */
 .hero { text-align: center; padding: 6px 0 10px; }
@@ -179,7 +179,7 @@ input[type=text] { background: var(--bg-soft); border: 1px solid var(--line); co
 .me-row .cards { display: flex; gap: 6px; }
 .me-row .side { flex: 1; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
 .me-row .coin { font-size: 22px; }
-.me-row .coin i { width: 22px; height: 22px; }
+.me-row .coin:not(.pile) i { width: 22px; height: 22px; }
 
 .actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .act { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 5px 3px; min-height: 46px; cursor: pointer;
@@ -430,3 +430,167 @@ input[type=text] { background: var(--bg-soft); border: 1px solid var(--line); co
 .fx-set .switch span::after { width: 24px; height: 24px; transition: transform .2s; }
 .fx-set .switch input:checked + span { background: var(--accent); }
 .fx-set .switch input:checked + span::after { transform: translateX(20px); }
+
+/* ============================================================ table look (2026-10-20)
+   The Play tab is a real Coup table seen from your seat (shared game-table kit: css/table.css + js/tablekit.js).
+   Far side: each opponent's name plate, their 2 cards lying on the table, their coins. Middle: the Court deck
+   and the Treasury heap, with what is happening. Near side: your 2 cards, your coins, your reference card
+   (its printed actions are the action buttons). Odds stay on the seats (bars) and in the laptop side panel. */
+#tab-play { padding: 0; }
+#tab-play .felt { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 10px 12px 8px; }
+#tab-play .felt .muted, #tab-play .record, #tab-play .hero p { color: rgba(246, 239, 220, .72); }
+#tab-play .panel { background: rgba(18, 21, 30, .9); border-color: rgba(0, 0, 0, .45); box-shadow: 0 6px 18px rgba(0, 0, 0, .35); }
+
+/* cards are printed card stock: a soft shadow on the table and a light sheen */
+#tab-play .cardf .face, #tab-play .cardf .back { box-shadow: 0 1px 1px rgba(0, 0, 0, .4), 0 3px 8px rgba(0, 0, 0, .45); }
+#tab-play .cardf .face::after, #tab-play .cardf .back::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(135deg, rgba(255, 255, 255, .2), transparent 38%, transparent 70%, rgba(0, 0, 0, .1));
+}
+/* a lost card is turned face up and pushed aside: darker, no stripes */
+#tab-play .opp .cardf.dead, #tab-play .me-row .cardf.dead { opacity: 1; filter: brightness(.5) saturate(.45); }
+#tab-play .opp .cardf.dead::after, #tab-play .me-row .cardf.dead::after { display: none; }
+
+/* coins: real metal coins in short stacks, the count beside them */
+.coin.pile { --coin-size: 15px; display: inline-flex; align-items: flex-end; gap: 4px; flex: none; }
+.coin.pile .heap { position: relative; display: inline-block; flex: none; width: calc(var(--coin-size) * (1 + .62 * (var(--st) - 1))); height: calc(var(--coin-size) * .72 + 18px); }
+.coin.pile .heap.none { width: 0; }
+.coin.pile .tbl-coin { position: absolute; left: calc(var(--j) * var(--coin-size) * .62); bottom: calc(var(--k) * 4px); height: calc(var(--coin-size) * .72);
+  box-shadow: inset 0 -1px 1px rgba(0, 0, 0, .3), 0 2px 0 var(--metal-d), 0 3px 3px rgba(0, 0, 0, .45); }
+.coin.pile b { font-size: 13px; font-weight: 800; color: #f6efdc; text-shadow: 0 1px 2px rgba(0, 0, 0, .7); line-height: 1; }
+
+/* opponents: seats round the far side, no boxes */
+#tab-play .opp { background: none; border: 0; border-radius: 14px; padding: 2px 2px 4px; display: flex; flex-direction: column; align-items: center; gap: 3px; }
+#tab-play .opp.turn { box-shadow: none; }
+#tab-play .opp.out { opacity: .5; }
+#tab-play .opp .top { justify-content: center; align-items: flex-end; gap: 6px; max-width: 100%; min-width: 0; }
+#tab-play .opp .nm { min-width: 0; }
+/* phone: the log is two faint lines; the middle of the table gets the room */
+#tab-play .game { grid-template-rows: auto auto minmax(min-content, 1fr) auto auto; }
+.game > .tlog { max-height: 38px; }
+#tab-play .opp .nm {
+  max-width: 100%; padding: 1px 8px; border-radius: 4px; font-size: 12.5px; line-height: 18px; color: #f6efdc; letter-spacing: .02em;
+  background: linear-gradient(#3b2a1a, #24180d); border: 1px solid #7a5a2e; box-shadow: inset 0 1px 0 rgba(255, 220, 150, .25), 0 2px 4px rgba(0, 0, 0, .4);
+}
+#tab-play .opp.turn .nm { border-color: #f0c35a; box-shadow: 0 0 0 2px rgba(240, 195, 90, .5), 0 2px 4px rgba(0, 0, 0, .4); }
+#tab-play .opp.targeted .nm { border-color: var(--bad); }
+#tab-play .opp.targetable { background: rgba(240, 179, 84, .1); }
+#tab-play .opp .mid { justify-content: center; align-items: flex-end; margin-top: 0; gap: 6px; max-width: 100%; }
+#tab-play .opp .cards { gap: 2px; padding: 2px; }
+#tab-play .bars { flex: 0 1 34px; height: 30px; }
+#tab-play .bars .b { background: rgba(0, 0, 0, .32); }
+
+/* the log: a faint line on the table; tap it for the whole game */
+.game > .tlog { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 8px; padding: 0 4px; cursor: pointer;
+  color: rgba(246, 239, 220, .55); font-size: 12.5px; overflow: hidden; -webkit-mask-image: linear-gradient(#000 55%, transparent); mask-image: linear-gradient(#000 55%, transparent); }
+.game > .tlog div.me { color: rgba(246, 239, 220, .9); }
+.game > .tlog div.big { color: var(--warm); }
+.log.full { background: none; border: 0; padding: 0; overflow: visible; }
+
+/* the middle of the table: Court deck, what is happening, Treasury */
+#tab-play .stage { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; background: none; border: 0; border-radius: 22px; padding: 6px 2px; min-height: 104px; }
+#tab-play .game:has(.act:not(:disabled)) .stage, #tab-play .game:has(.me-row .pickable) .stage,
+#tab-play .stage:has([data-ch], [data-blk], [data-exam], [data-openx], [data-cancel]) {
+  border-color: transparent; box-shadow: none; background: radial-gradient(ellipse 60% 65% at 50% 50%, rgba(255, 232, 170, .14), transparent 75%);
+}
+.stage .prompt { display: flex; flex-direction: column; gap: 8px; justify-content: center; min-width: 0; }
+#tab-play .stage .t1 { color: #f6efdc; text-shadow: 0 1px 3px rgba(0, 0, 0, .6); }
+#tab-play .stage .t2 { color: rgba(246, 239, 220, .75); }
+#tab-play .stage:has([data-review]) .t1 { color: var(--warm); }
+.court { display: flex; align-items: center; justify-content: center; padding: 10px 6px 0 0; }
+.court-deck { --card-w: 38px; }
+.court-deck .tbl-badge { right: -9px; bottom: -7px; font-size: 10.5px; }
+.coup-back { padding: 0; overflow: hidden; background: #141a30; border: 0; }
+.coup-back svg { display: block; width: 100%; height: 100%; }
+.coup-ghost { --card-w: 38px; border-radius: 4px; box-shadow: 0 6px 14px rgba(0, 0, 0, .45); }
+.treasury { --coin-size: 19px; position: relative; width: 58px; height: 52px; flex: none; }
+.treasury .tbl-coin { position: absolute; margin: calc(var(--coin-size) / -2) 0 0 calc(var(--coin-size) / -2); }
+
+/* near side: your cards lying in front of you, your coins */
+#tab-play .me-row { padding: 2px 4px 0; }
+#tab-play .me-row .cards { gap: 4px; }
+#tab-play .me-row .coin.pile { --coin-size: 24px; align-self: center; margin-left: 4px; }
+#tab-play .me-row .coin.pile b { font-size: 22px; }
+
+/* your reference card: the printed list of actions (tap one to take it) */
+.actions.refcard {
+  gap: 0; padding: 5px; border-radius: 10px; color: #2a1d10;
+  background: radial-gradient(ellipse at 30% 20%, #fbf5e6, #ece0c3 75%); border: 1px solid rgba(60, 40, 20, .45);
+  box-shadow: inset 0 0 0 3px #fbf5e6, inset 0 0 0 4px rgba(120, 80, 30, .35), 0 1px 1px rgba(0, 0, 0, .4), 0 4px 12px rgba(0, 0, 0, .45);
+  transition: box-shadow .25s ease, translate .25s ease;
+}
+.refcard .act { background: none; border: 0; border-radius: 6px; color: #2a1d10; box-shadow: inset -1px 0 0 rgba(90, 60, 25, .2), inset 0 -1px 0 rgba(90, 60, 25, .2); }
+.refcard .act:nth-child(4n) { box-shadow: inset 0 -1px 0 rgba(90, 60, 25, .2); }
+.refcard .act:nth-child(n+5) { box-shadow: inset -1px 0 0 rgba(90, 60, 25, .2); }
+.refcard .act:nth-child(n+5):last-child { box-shadow: none; }
+.refcard .act b { color: #2a1d10; }
+.refcard .act small { color: #6d5a40; }
+.refcard .act small.bluff { color: #b35f0c; font-weight: 700; }
+.refcard .act:disabled { opacity: .38; }
+@media (hover: hover) { .refcard .act:not(:disabled):hover { background: rgba(90, 60, 25, .1); } }
+.refcard .act.sel { background: rgba(240, 179, 84, .45); }
+.refcard .act.hinted { outline: 2px solid #c07a12; outline-offset: -2px; }
+.game:has(.refcard .act:not(:disabled)) .refcard { translate: 0 -2px; box-shadow: inset 0 0 0 3px #fbf5e6, inset 0 0 0 4px rgba(120, 80, 30, .35), 0 2px 3px rgba(0, 0, 0, .35), 0 12px 24px rgba(0, 0, 0, .5); }
+
+#tab-play .hero h1 { text-shadow: 0 2px 6px rgba(0, 0, 0, .5); }
+
+/* short or narrow phones (iPhone SE): smaller cards so the whole table still fits */
+@media (max-width: 899px) and (max-height: 620px) {
+  #tab-play .game .me-row .cardf { width: 60px; height: 84px; }
+  #tab-play .stage { min-height: 0; }
+  #tab-play .game { gap: 6px; }
+}
+@media (max-width: 360px) {
+  #tab-play .opps { grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 2px 4px; }
+  #tab-play .opp .cardf.sm { width: 30px; height: 42px; }
+  #tab-play .bars { flex-basis: 22px; gap: 1px; height: 26px; }
+  #tab-play .opp .nm { padding: 0 6px; font-size: 12px; }
+  .refcard .act b { font-size: 13px; }
+  .refcard .act small { font-size: 10.5px; }
+  .court-deck { --card-w: 32px; }
+  .treasury { --coin-size: 16px; width: 46px; }
+}
+@media (max-width: 360px) and (max-height: 620px) {
+  #tab-play .opps:has(.opp:nth-child(4)) ~ .tlog { display: none; }
+  #tab-play .opps:has(.opp:nth-child(4)) .opp .cardf.sm { width: 26px; height: 36px; }
+}
+
+/* phone on its side: your cards and your reference card share the near edge */
+@media (max-width: 899px) and (max-height: 500px) and (orientation: landscape) {
+  #tab-play .felt { padding: 6px 12px 6px; }
+  #tab-play .game { grid-template-columns: minmax(0, 1fr) minmax(0, 1.25fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 6px 12px;
+    grid-template-areas: "opps opps" "log stage" "me acts"; }
+  #tab-play .opps { grid-area: opps; }
+  #tab-play .game > .tlog { grid-area: log; max-height: none; align-self: stretch; }
+  #tab-play .stage { grid-area: stage; min-height: 0; padding: 0; }
+  #tab-play .me-row { grid-area: me; }
+  #tab-play .actions { grid-area: acts; align-self: end; }
+  #tab-play .game .me-row .cardf { width: 58px; height: 81px; }
+  #tab-play .refcard .act { min-height: 40px; }
+  #tab-play .opp .cardf.sm { width: 30px; height: 42px; }
+  #tab-play .hero .fan { display: none; }
+  #tab-play .hero { padding: 0 0 6px; }
+  #tab-play .hero h1 { font-size: 22px; margin: 0; }
+  #tab-play .setup-wrap .panel { padding: 8px 12px; margin-bottom: 6px; }
+}
+
+@media (min-width: 900px) {
+  #tab-play .felt { padding: 16px 22px 18px; }
+  #tab-play .game { grid-template-rows: auto minmax(150px, 1fr) auto auto; }
+  .game > .tlog { display: none; }
+  #tab-play .playwrap > .game { min-width: 0; }
+  #tab-play .opps { display: flex; justify-content: space-around; align-items: flex-start; gap: 8px; padding-bottom: 30px; }
+  #tab-play .opp { flex: 0 1 180px; min-width: 0; translate: 0 calc(var(--arc, 0) * 30px); padding: 4px 4px 6px; }
+  #tab-play .opps:has(.opp:nth-child(4)) .opp .cardf.sm { width: 44px; height: 62px; }
+  #tab-play .opps:has(.opp:nth-child(4)) .bars { flex-basis: 30px; }
+  #tab-play .opp .nm { font-size: 14px; line-height: 22px; padding: 1px 12px; }
+  #tab-play .bars { flex-basis: 46px; height: 46px; }
+  .coin.pile { --coin-size: 20px; }
+  .coin.pile b { font-size: 15px; }
+  #tab-play .me-row .coin.pile { --coin-size: 30px; }
+  #tab-play .stage { min-height: 150px; gap: 24px; padding: 6px 24px; }
+  .court-deck, .coup-ghost { --card-w: 60px; }
+  .treasury { --coin-size: 26px; width: 120px; height: 92px; }
+  .actions.refcard { width: 100%; max-width: 640px; justify-self: center; padding: 7px; }
+  #tab-play .side-col .panel, #tab-play .side-col .log { background: rgba(18, 21, 30, .92); border-color: rgba(0, 0, 0, .45); }
+}

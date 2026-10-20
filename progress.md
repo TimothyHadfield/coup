@@ -1,7 +1,7 @@
 # Coup — progress
 
 ## START HERE
-Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-20 (sounds, celebrations and animations via shared fx.js; before that the visual design pass).
+Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-20 (real-table look via the shared `_table` kit; before that sounds/animations and the visual design pass).
 
 ## Goal right now
 Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at it on his phone.
@@ -18,6 +18,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 | Online rooms (any seat friend or computer, reload resumes) | Done, node tests + real two-browser run |
 | Visual design pass (2026-10-20) | Done: CSS block at the end of `styles.css` ("design pass") |
 | Sound & effects (2026-10-20) | Done: `js/fx.js` (copy of `../_fx/fx.js`, never edit) + the "sound & effects" block in `js/app.js`; Settings has a Sound & effects section; `tests/ui.fx.mjs` |
+| Real-table look (2026-10-20) | Done: dark wood table, Court deck stack + Treasury coin heap in the middle, opponents round the far side on an arc with brass name plates, your 2 cards tilted in front of you with a real coin pile, actions on a cream reference card; cards fly from the deck when dealt / returned. Kit = `css/table.css` + `js/tablekit.js` (copies of `../_table/`, never edit); our CSS is the "table look" block at the end of `styles.css` |
 | Live | https://timothyhadfield.github.io/coup/ |
 
 **Event → sound map** (computers' moves at 0.85 volume; steps 150 ms apart, 0.55x on Fast; same in online games, driven by new events in each snapshot):
@@ -51,6 +52,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - "Really work on the webdesign of the games, aswell as art, fitting it with an iphone and computer"
 - Hub dark tokens, phone-first, no page scroll on main screens, ? explains why, choices live in Settings. $0.
 - "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered." (2026-10-20)
+- "could you also make sure that each of the games also have a look to them so that the game (either board or card layout) looks almost identical to how the board or card layout looks like in real life, so it's easy to understand if you've already played it before, and also so it feels more like you're actually playing in real life rather than you're playing it online. Even things like how youre cards or other things are laid out infront of you, make it look like they are actual cards laid out similar to how it looks like in real life. Make the decks look like actual decks. Make the board have the same design as it does in real life with the same layouts. It should look kind of like you're looking through a camera that is connected to a user's glasses that is playing in real life (not actually, but the layout and style of everything should be similar)." (2026-10-20)
 
 ## Traps
 - `js/online.js` is a copy of `../_online/online.js`; don't edit it here.
@@ -65,6 +67,9 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - `js/fx.js` is a byte-for-byte copy of `../_fx/fx.js`; recopy, never edit. Its switch/seg fallback CSS would win over ours, so `styles.css` ends with `.fx-set` rules that restyle its rows like the other Settings rows.
 - Headless WebKit barely ticks animation frames while screenshotting: confetti looks stuck in the corners. For pictures, stub `requestAnimationFrame` with a 16 ms timer in the test page (the app is fine).
 - `tests/ui.fx.mjs` fakes `AudioContext` (WebKit on Windows has none) and spies `FX.play` by intercepting `window.FX`.
+- `css/table.css` + `js/tablekit.js` are byte copies of `../_table/table.css` / `table.js` (renamed because `js/table.js` is our Table tab). Recopy, never edit.
+- The old `.coin i` rules are scoped `:not(.pile)`; without that they flatten the kit's real coins.
+- Deal animation: cards not yet dealt are tracked in the `undealt` set ("seat:card") and re-hidden after every re-render, else they pop in early.
 - Hard bots used to loop forever (Assassinate vs bluffed Contessa between two last-card players, ~1.5% of games). Fixed by making repeat attacks into a past block less attractive; `ai.test.js` guards it (failed on the old AI: 300 turns).
 
 ## Decisions
@@ -78,6 +83,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Browser Back: closes an open sheet first, then returns to the previous tab (history entries per tab and sheet).
 - Design pass: the stage gets the space on phone (log shrinks), the stage glows blue whenever the move is yours (CSS `:has()`), game over shows the winner big and orange with the dead action grid hidden (kept in place), hand cards 78x109 on phone when there are 3 or fewer opponents, card subtitles hidden on small cards, laptop setup is wider with bigger fan cards, table setup fits 393px without scrolling, `.btn.small` 40px, `?` has a 42px hit area.
 - Sound & effects section sits between Variants and Your record in Settings; win confetti uses the winner's character colours plus orange/blue/white; "big" moments = you catch a bluff, or your challenged claim holds.
+- Table look: dark wood surface (Coup has no board); Court deck keeps a count badge; log is a faint strip on phone (tap for the full log) and hidden on laptop (side panel has it); dead cards dimmed face up with no stripes; landscape phone and 320px got their own layouts (actions were cut off there before).
 - Table "Your 2 cards": tapping the same card twice picks a pair; at 5-6 players the player grid goes 3 across so Undo stays on screen.
 
 ## NOT verified
@@ -88,6 +94,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Hard is only even with Medium head-to-head (tried 6 setting tweaks, all 46-54%); it's clearly best three-way and vs Easy.
 - A local game once stalled on a computer's turn with no error (desktop UI run, 2026-10-20, machine at 100% CPU from other agents). Root cause not found; a 3-second safety net now restarts the game loop (logs "game loop restarted" as a console warning, `window.__coup.revived` counts it).
 - After a friend reloads mid-game, online.js shows them "The server said no — you may not be in this room any more." once, though they rejoin and play on fine. That's in the shared `_online/online.js` (not ours to edit).
+- Table look: the read-only reviewer sub-agent wasn't run (concurrent-agent limit); self-review only. Card proportions 63x88 are from sleeve listings (reasoned).
 - Rule edge: 2-player-variant coin split (GameRules says both 1 coin).
 
 ## Rejected / parked
