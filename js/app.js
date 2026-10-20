@@ -685,7 +685,7 @@
     const notes = str ? {
       easy: 'plays honest',
       medium: `beats Easy ${pc(str.mediumVsEasy, 'medium')}`,
-      hard: `beats Medium ${pc(str.hardVsMedium, 'hard')}`,
+      hard: `wins ${pc(str.threeWay, 'hard')} 3-way`,
     } : { easy: 'plays honest', medium: 'counts cards', hard: 'reads the table' };
     const rec = ['easy', 'medium', 'hard'].map((k) => `<span>${k[0].toUpperCase() + k.slice(1)} ${store.stats[k].w}/${store.stats[k].g}</span>`).join('');
     const chars = (st.inquisitor ? E.INQ_CHARS : E.BASE_CHARS);
@@ -904,7 +904,7 @@
   const HELP = {
     odds: 'Every card you can\'t see could be in any hidden spot, so we start by counting. Then each claim shifts the odds: a player who holds the card always may claim it, a player who doesn\'t only sometimes does (the "how much people bluff" setting). A caught bluff means they certainly don\'t have it; a card shown and shuffled away resets that.',
     claim: 'This is the chance this player really holds the card they just claimed, using the cards you can see, your own hand, and everything they have claimed or skipped so far.',
-    strength: 'Each level played thousands of games against the others with seats rotated, so the numbers are measured, not guessed. Hard weighs the odds of each claim against what a challenge risks; Medium uses the same odds more timidly; Easy plays honest and calls bluffs at random.',
+    strength: 'Each level played thousands of games against the others with seats rotated, so the numbers are measured, not guessed. Hard weighs the odds of each claim against what a challenge risks; Medium uses the same odds more timidly; Easy plays honest and calls bluffs at random. "Beats Easy" is one computer against one Easy. "Wins 3-way" is Hard against one Easy and one Medium, where a fair share is 33%. One against one, Hard and Medium come out about even.',
     bluff: 'How often a player who does NOT hold a card still claims it, compared with a player who does. Pick what fits your table; it changes every odds number.',
     twodeal: 'The rulebook\'s 2-player setup: each player picks 1 card from a set of all five characters and sets the other 4 aside face down, then gets 1 random card. The deck is only 3 cards.',
     online: 'Make a room and share the 5-letter code. Each seat is a friend or a computer. The host’s browser runs the computers and checks every move, and each player’s cards are only ever sent to that player. If someone drops out, a computer keeps their seat going; reloading the page puts you back in.',
