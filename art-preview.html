@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coup art preview</title>
+<style>
+  :root { --bg:#0f1117; --panel:#1a1e2b; --line:#2a3042; --text:#e8eaf0; --muted:#969db4; }
+  * { box-sizing: border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif; }
+  h2 { font-size:14px; color:var(--muted); font-weight:600; margin:18px 0 8px; }
+  .row { display:flex; flex-wrap:wrap; gap:10px; align-items:flex-end; }
+  .panel { background:var(--panel); border:1px solid var(--line); border-radius:10px; padding:10px; }
+  .big svg { width:100px; height:140px; }
+  .mid svg { width:72px; height:101px; }
+  .small svg { width:46px; height:64px; }
+  .list { display:flex; flex-direction:column; gap:6px; font-size:14px; }
+  .list div { display:flex; gap:8px; align-items:center; }
+  .bar { height:8px; border-radius:4px; }
+</style>
+</head>
+<body>
+<h2>Faces 100 x 140</h2>
+<div class="row big panel" id="big"></div>
+<h2>Faces 46 x 64 (small)</h2>
+<div class="row small panel" id="small"></div>
+<h2>Backs</h2>
+<div class="row panel" id="backs"></div>
+<h2>Coins and icons</h2>
+<div class="row panel" id="coins"></div>
+<div class="panel list" id="icons" style="margin-top:10px"></div>
+<script src="js/art.js"></script>
+<script>
+  const A = window.CoupArt;
+  const $ = (id) => document.getElementById(id);
+  $('big').innerHTML = A.CHARS.map((c) => A.card(c)).join('');
+  $('small').innerHTML = A.CHARS.map((c) => A.card(c, { small: true })).join('') + A.back({ small: true });
+  $('backs').innerHTML = '<div class="big">' + A.back() + '</div><div class="small">' + A.back({ small: true }) + '</div>';
+  $('coins').innerHTML = [14, 20, 28, 40].map((n) => A.coin(n)).join('') +
+    A.CHARS.map((c) => A.icon(c)).join('') + A.CHARS.map((c) => A.icon(c, 28)).join('');
+  $('icons').innerHTML = A.CHARS.map((c, i) => '<div>' + A.icon(c) + '<span style="width:84px">' + c +
+    '</span><span class="bar" style="width:' + (30 + i * 20) + 'px;background:' + A.COLORS[c] + '"></span></div>').join('');
+</script>
+</body>
+</html>

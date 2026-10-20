@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <rect width="512" height="512" fill="#0f1117"/>
+  <!-- back card, tilted left (purple) -->
+  <g transform="rotate(-14 256 300)">
+    <rect x="118" y="150" width="190" height="266" rx="22" fill="#4a2f7a" stroke="#a47de6" stroke-width="10"/>
+    <rect x="140" y="172" width="146" height="222" rx="12" fill="none" stroke="#a47de6" stroke-opacity="0.45" stroke-width="5"/>
+  </g>
+  <!-- front card, tilted right (red) -->
+  <g transform="rotate(12 256 300)">
+    <rect x="206" y="150" width="190" height="266" rx="22" fill="#8a2436" stroke="#e5546a" stroke-width="10"/>
+    <rect x="228" y="172" width="146" height="222" rx="12" fill="none" stroke="#e5546a" stroke-opacity="0.45" stroke-width="5"/>
+  </g>
+  <!-- crown -->
+  <g transform="translate(256 140)">
+    <path d="M-104 64 L-118 -46 L-56 6 L0 -76 L56 6 L118 -46 L104 64 Z" fill="#f0b354" stroke="#0f1117" stroke-width="10" stroke-linejoin="round"/>
+    <rect x="-108" y="58" width="216" height="34" rx="8" fill="#f0b354" stroke="#0f1117" stroke-width="10"/>
+    <circle cx="0" cy="-80" r="16" fill="#f0b354" stroke="#0f1117" stroke-width="8"/>
+    <circle cx="-120" cy="-50" r="13" fill="#f0b354" stroke="#0f1117" stroke-width="8"/>
+    <circle cx="120" cy="-50" r="13" fill="#f0b354" stroke="#0f1117" stroke-width="8"/>
+    <circle cx="0" cy="75" r="9" fill="#e0484f"/>
+  </g>
+</svg>
