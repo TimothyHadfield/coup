@@ -71,7 +71,13 @@
   const pctTxt = (p) => (p == null || isNaN(p) ? '—' : Math.round(p * 100) + '%');
 
   // ------------------------------------------------------------------ tabs
-  function setTab(t) {
+  function setTab(t, fromPop) {
+    if (!fromPop && t !== store.tab) {
+      try {
+        if (history.state && history.state.sheet) history.replaceState({ tab: t }, '');
+        else history.pushState({ tab: t }, '');
+      } catch (e) { /* history blocked */ }
+    }
     store.tab = t; save();
     document.querySelectorAll('nav.tabs button').forEach((b) => b.classList.toggle('on', b.dataset.tab === t));
     document.querySelectorAll('main .tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + t));
@@ -87,6 +93,7 @@
 
   // ------------------------------------------------------------------ overlay
   function sheet(html, onClick) {
+    try { if (!(history.state && history.state.sheet)) history.pushState({ tab: store.tab, sheet: 1 }, ''); } catch (e) { /* history blocked */ }
     const ov = $('#overlay');
     ov.innerHTML = `<div class="sheet-back" data-close="1"><div class="sheet" role="dialog">${html}</div></div>`;
     ov.onclick = (e) => {
@@ -96,6 +103,13 @@
     };
   }
   function closeSheet() { $('#overlay').innerHTML = ''; $('#overlay').onclick = null; }
+  // Back: close an open sheet first, skip a stale sheet entry, otherwise go to the previous tab
+  window.addEventListener('popstate', (e) => {
+    const st = e.state || {};
+    if ($('#overlay').innerHTML) { closeSheet(); return; }
+    if (st.sheet) { history.back(); return; }
+    setTab(st.tab || 'play', true);
+  });
   function confirmBox(title, body, okLabel, onOk) {
     sheet(`<h3>${esc(title)}</h3><div class="body"><p class="muted">${esc(body)}</p></div>
       <div class="foot"><button class="btn" data-s="no">Cancel</button><button class="btn danger" data-s="yes">${esc(okLabel)}</button></div>`,
@@ -151,8 +165,22 @@
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const isHuman = (p) => p === ME && !(G && G.online && G.sent);
 
+  let loops = 0, revived = 0, tick = 0;
   async function run(gen) {
+    loops++;
+    try { await runLoop(gen); } catch (e) { console.error('game loop', e); }
+    finally { loops--; }
+  }
+  // Safety net: if a computer is due to move and no game loop is running, start one.
+  setInterval(() => {
+    if (!G || G.online || G.over || !G.s.pending || isHuman(G.s.pending.p)) return;
+    if (loops && Date.now() - tick < 10000) return;
+    revived++; console.warn('game loop restarted', loops, G.s.turnNo);
+    run(++GEN);
+  }, 3000);
+  async function runLoop(gen) {
     while (G && gen === GEN) {
+      tick = Date.now();
       const s = G.s;
       const pd = s.pending;
       if (!pd) { finish(); return; }
@@ -287,7 +315,8 @@
   function renderPlay() {
     const root = $('#tab-play');
     if (store.tab !== 'play') return;
-    if (!G) { root.innerHTML = NET ? lobbyHTML() : setupHTML(); return; }
+    if (!G) { root.innerHTML = NET && SNAP && SNAP.status !== 'none' ? lobbyHTML() : setupHTML(); return; }
+    if (!G.online && !G.over && !G.s.pending) { finish(); return; }   // the game just ended
     const s = G.s;
     const pd = s.pending;
     const post = S().showOdds ? posteriorNow() : null;
@@ -546,6 +575,7 @@
     code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
     if (code.length !== 5) { toast('Room codes have 5 letters.'); return; }
     if (netBusy) return; netBusy = true;
+    toast('Looking for room ' + code + '…');
     try {
       const room = await netRoom();
       const r = await room.joinRoom(code, netName());
@@ -565,10 +595,15 @@
     if (!NET) return;
     G.sent = true; renderPlay();
     const r = await NET.act(d);
+    netLog({ t: 'act', d, ok: !!(r && r.ok) });
     if (!r || !r.ok) { G.sent = false; toast((r && r.message) || 'That move did not go through.'); renderPlay(); }
   }
+  // last few online events, for tests and bug reports (window.__coup.netLog)
+  const NETLOG = [];
+  function netLog(x) { NETLOG.push(x); if (NETLOG.length > 30) NETLOG.shift(); }
   function onSnap(snap) {
     SNAP = snap;
+    if (snap) netLog({ t: 'snap', st: snap.status, toAct: snap.toAct, turn: snap.pub && snap.pub.turnNo, pd: snap.mine && snap.mine.pending ? snap.mine.pending.kind : '', err: snap.error || '' });
     if (!snap || ['none', 'closed', 'left'].includes(snap.status)) {
       if (snap && snap.status === 'closed') toast('The host closed the room.');
       if (snap && snap.status !== 'none') { NET = null; store.netOn = false; save(); }
@@ -586,6 +621,7 @@
       ME = snap.mySeat;
       G.pub = snap.pub; G.mine = snap.mine;
       G.s = window.CoupGame.stateFromView(snap.pub, snap.mine, ME);
+      (snap.seats || []).forEach((st, i) => { if (G.s.players[i] && st.name) G.s.players[i].name = st.name; });
       G.sent = false;
       const evs = G.s.events;
       if (!fresh && evs.length > G.seen) noteEvents(evs.slice(G.seen));
@@ -629,7 +665,7 @@
         <button class="btn primary" data-s="create" style="width:100%;min-height:46px">Make a room</button>
         <p class="muted" style="margin:2px 0 10px;font-size:13px">${1 + S().opps} seats (your Opponents setting). You pick which are friends and which are computers.</p>
         <div class="label">Or join one</div>
-        <div class="row" style="gap:8px"><input type="text" id="netCode" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" spellcheck="false" style="flex:1;text-transform:uppercase;letter-spacing:4px;font-weight:700"><button class="btn warm" data-s="join">Join</button></div>
+        <div class="row" style="gap:8px"><input type="text" id="netCode" maxlength="12" placeholder="CODE" autocapitalize="characters" autocomplete="off" spellcheck="false" style="flex:1;text-transform:uppercase;letter-spacing:4px;font-weight:700"><button class="btn warm" data-s="join">Join</button></div>
       </div>`,
     (k) => {
       const nameEl = $('#netName');
@@ -653,7 +689,7 @@
     } : { easy: 'plays honest', medium: 'counts cards', hard: 'reads the table' };
     const rec = ['easy', 'medium', 'hard'].map((k) => `<span>${k[0].toUpperCase() + k.slice(1)} ${store.stats[k].w}/${store.stats[k].g}</span>`).join('');
     const chars = (st.inquisitor ? E.INQ_CHARS : E.BASE_CHARS);
-    const resume = store.game && !G ? '<button class="btn" data-resume="1" style="width:100%;margin-top:8px">Resume last game</button>' : '';
+    const resume = store.game && !store.game.over && !G ? '<button class="btn" data-resume="1" style="width:100%;margin-top:8px">Resume last game</button>' : '';
     return `<div class="setup-wrap">
       <div class="hero"><div class="fan">${chars.map((c) => cardEl(c)).join('')}</div><h1>Coup</h1><p>Bluff, call bluffs, be the last one standing.</p></div>
       <div class="panel"><h2>Opponents</h2><div class="seg">${[1, 2, 3, 4, 5].map((n) => `<button class="${st.opps === n ? 'on' : ''}" data-opps="${n}">${n}</button>`).join('')}</div></div>
@@ -695,8 +731,8 @@
     } else {
       const q = T.nextQuestion(tb.setup, tb.turns, t);
       const p = q && q.claim ? T.claimOdds(tb.setup, tb.turns, t, q, O, S().bluff) : null;
-      const head = `<div class="row between"><div><div style="font-weight:750">${esc(nm(t.actor))}'s turn${t.action ? ' · ' + esc(E.ACTIONS[t.action].label) : ''}${t.target != null ? ' → ' + esc(nm(t.target)) : ''}</div>
-        <div class="muted" style="font-size:13px">${esc(q ? q.ask : '')}</div></div>
+      const head = `<div class="row between"><div><div style="font-weight:750">${t.actor === d.me ? 'Your' : esc(nm(t.actor)) + "'s"} turn${t.action ? ' · ' + esc(E.ACTIONS[t.action].label) : ''}${t.target != null ? ' → ' + esc(nm(t.target)) : ''}</div>
+        <div class="muted" style="font-size:13px">${esc(q ? youAsk(q.ask, d) : '')}</div></div>
         ${p != null ? `<div class="pct"><b style="color:${scale(p)}">${pctTxt(p)}</b><small>true <button class="q" data-help="claim">?</button></small></div>` : ''}</div>`;
       let opts = '';
       if (q && q.multi) {
@@ -714,7 +750,16 @@
     const log = `<div class="log">${lines}</div>`;
     const tools = `<div class="row"><button class="btn small" data-tundo="1" ${tb.turns.length ? '' : 'disabled'}>Undo turn</button><span style="flex:1"></span><button class="btn small ghost" data-tnew="1">New table</button></div>`;
     const side = `<div class="side-col"><div class="panel" style="margin:0"><h2>Odds <button class="q" data-help="odds">?</button></h2>${tableOdds(d, post)}</div>${log}</div>`;
-    root.innerHTML = `<div class="tblwrap"><div class="tbl"><div class="tplayers">${players}</div>${ask}${log}${tools}</div>${side}</div>`;
+    root.innerHTML = `<div class="tblwrap"><div class="tbl"><div class="tplayers ${d.players.length >= 5 ? 'many' : ''}">${players}</div>${ask}${log}${tools}</div>${side}</div>`;
+  }
+  // the companion's questions use names; say "you" for your own seat
+  function youAsk(txt, d) {
+    if (d.me < 0) return txt;
+    const n = d.players[d.me].name;
+    if (txt.startsWith(n + ': ')) { const r = txt.slice(n.length + 2); return r[0].toUpperCase() + r.slice(1); }
+    if (txt.startsWith(n + ' lost ')) return 'Which card did you lose?';
+    if (txt.startsWith(n + ' turned over ')) return 'Which card did you turn over?';
+    return txt.split('Did ' + n + ' ').join('Did you ');
   }
   function safePost(v, tb) {
     try {
@@ -927,14 +972,16 @@
     if (ds.tcard) {
       const mc = store.tableDraft.myCards;
       const i = mc.indexOf(ds.tcard);
-      if (i >= 0 && (mc.length < 2 || mc.filter((x) => x === ds.tcard).length === 2)) { mc.splice(i, 1); }
-      else if (mc.length < 2) mc.push(ds.tcard);
+      if (mc.length < 2) mc.push(ds.tcard);                 // tapping the same card twice makes a pair
+      else if (i >= 0) mc.splice(i, 1);                     // full: tapping a chosen card removes it
       else { mc.shift(); mc.push(ds.tcard); }
       save(); renderTable(); return;
     }
     if (ds.tstart) {
       const ts = store.tableDraft;
       const names = ts.names.slice(0, ts.n).map((x, i) => (x || '').trim() || 'P' + (i + 1));
+      if (ts.me < 0) names.forEach((x, i) => { if (/^you$/i.test(x)) names[i] = 'P' + (i + 1); });   // watching: nobody is "You"
+      names.forEach((x, i) => { if (names.indexOf(x) !== i) names[i] = x + ' ' + (i + 1); });       // same name twice
       store.table = { setup: { names, me: ts.me, myCards: ts.me >= 0 ? ts.myCards.slice() : [], first: ts.first, rules: { inquisitor: S().inquisitor } }, turns: [], partial: null };
       save(); renderTable(); return;
     }
@@ -992,11 +1039,16 @@
   });
   document.addEventListener('input', (e) => {
     const t = e.target;
-    if (t.dataset.tname != null) { store.tableDraft.names[+t.dataset.tname] = t.value; save(); return; }   // no re-render: keeps the keyboard up
+    if (t.dataset.tname != null) {
+      const i = +t.dataset.tname;
+      store.tableDraft.names[i] = t.value; save();
+      document.querySelectorAll(`[data-tme="${i}"], [data-tfirst="${i}"]`).forEach((b) => { b.textContent = t.value || 'P' + (i + 1); });
+      return;
+    }   // no re-render: keeps the keyboard up
     if (t.dataset.calc) { calc[t.dataset.calc] = +t.value; if (calc.copies > calc.unseen) calc.copies = calc.unseen; renderLearn(); }
   });
   // the table "you" buttons show names: refresh them when a name field loses focus
-  document.addEventListener('focusout', (e) => { if (e.target.dataset && e.target.dataset.tname != null) renderTable(); });
+
 
   // ------------------------------------------------------------------ boot
   fetch('data/stats.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => { strength = j; render(); }).catch(() => {});
@@ -1004,12 +1056,13 @@
     G = store.game;
     if (G.over) G = null;
   }
-  setTab(store.tab || 'play');
+  try { history.replaceState({ tab: store.tab || 'play' }, ''); } catch (e) { /* history blocked */ }
+  setTab(store.tab || 'play', true);
   if (G && !G.over) run(++GEN);
   // back into an online room after a reload
   if (store.netOn) {
     netRoom().then((room) => room.resume()).then((ok) => { if (!ok) { NET = null; store.netOn = false; save(); renderPlay(); } })
       .catch(() => { NET = null; store.netOn = false; save(); renderPlay(); });
   }
-  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, newGame, step: (d) => human(d) };
+  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, netLog: NETLOG, get revived() { return revived; }, newGame, step: (d) => human(d) };
 })();

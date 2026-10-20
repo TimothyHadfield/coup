@@ -112,6 +112,9 @@
     };
     const anyHas = (c) => 1 - x.opps.reduce((q, i) => q * (1 - Math.min(0.95, x.has(i, c))), 1);
     const stealBlockers = (rules && rules.stealBlockers) || ['Captain', 'Ambassador'];
+    // How often player t has blocked this action before. Trying again into the same block can loop
+    // forever between two last-card players, so each repeat makes it less attractive (saving up for a Coup wins instead).
+    const blocksBy = (t, a) => view.events.filter((e) => e.t === 'block' && e.p === t && e.action === a).length;
 
     add('income', -1, 1, null, 'Income is safe: nobody can stop it.');
     const pDuke = level === 'hard' ? anyHas('Duke') * 0.85 : 0.35;
@@ -122,12 +125,12 @@
       const c = view.players[t].coins;
       if (c === 0) continue;
       const pb = P.smart ? Math.min(0.95, stealBlockers.reduce((q, ch) => q + x.has(t, ch), 0) * 0.8) : 0.3;
-      add('steal', t, Math.min(2, c) * 1.7 * (1 - pb) + (c >= 5 ? 0.6 : 0), 'Captain',
+      add('steal', t, Math.min(2, c) * 1.7 * (1 - pb) + (c >= 5 ? 0.6 : 0) - (P.smart ? blocksBy(t, 'steal') * 1.2 : 0), 'Captain',
         `Steal from ${view.players[t].name}: about ${Math.round(pb * 100)}% they block.`);
     }
     for (const t of targets('assassinate')) {
       const pc = P.smart ? x.has(t, 'Contessa') : 0.3;
-      add('assassinate', t, killValue(x, t) * (1 - pc * 0.9) - 2.2 + (P.smart ? threat(x, t) * 0.05 : 0), 'Assassin',
+      add('assassinate', t, killValue(x, t) * (1 - pc * 0.9) - 2.2 + (P.smart ? threat(x, t) * 0.05 - blocksBy(t, 'assassinate') * 2.5 : 0), 'Assassin',
         `Assassinate ${view.players[t].name}: about ${Math.round(pc * 100)}% they have a Contessa.`);
     }
     if (legal.some((l) => l.action === 'exchange')) {

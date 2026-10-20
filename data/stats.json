@@ -7,135 +7,135 @@
    {
     "hand": "Duke+Duke",
     "n": 267,
-    "win": 64.8
+    "win": 70.4
    },
    {
     "hand": "Captain+Captain",
     "n": 254,
-    "win": 58.7
-   },
-   {
-    "hand": "Captain+Contessa",
-    "n": 767,
-    "win": 38.7
-   },
-   {
-    "hand": "Contessa+Contessa",
-    "n": 248,
-    "win": 37.1
-   },
-   {
-    "hand": "Assassin+Assassin",
-    "n": 255,
-    "win": 36.1
+    "win": 51.6
    },
    {
     "hand": "Contessa+Duke",
     "n": 799,
-    "win": 35
+    "win": 39
    },
    {
     "hand": "Ambassador+Assassin",
     "n": 772,
-    "win": 32
-   },
-   {
-    "hand": "Ambassador+Captain",
-    "n": 770,
-    "win": 31.8
-   },
-   {
-    "hand": "Assassin+Contessa",
-    "n": 817,
-    "win": 31.5
-   },
-   {
-    "hand": "Assassin+Captain",
-    "n": 761,
-    "win": 31.4
-   },
-   {
-    "hand": "Ambassador+Duke",
-    "n": 754,
-    "win": 30.6
+    "win": 38.6
    },
    {
     "hand": "Captain+Duke",
     "n": 738,
-    "win": 29.1
+    "win": 38.6
+   },
+   {
+    "hand": "Contessa+Contessa",
+    "n": 248,
+    "win": 35.9
+   },
+   {
+    "hand": "Assassin+Contessa",
+    "n": 817,
+    "win": 34.6
    },
    {
     "hand": "Assassin+Duke",
     "n": 779,
-    "win": 27.6
+    "win": 33
    },
    {
-    "hand": "Ambassador+Contessa",
-    "n": 763,
-    "win": 26.5
+    "hand": "Assassin+Captain",
+    "n": 761,
+    "win": 33
+   },
+   {
+    "hand": "Ambassador+Duke",
+    "n": 754,
+    "win": 32.4
+   },
+   {
+    "hand": "Assassin+Assassin",
+    "n": 255,
+    "win": 31
    },
    {
     "hand": "Ambassador+Ambassador",
     "n": 256,
     "win": 25.8
+   },
+   {
+    "hand": "Ambassador+Contessa",
+    "n": 763,
+    "win": 24.5
+   },
+   {
+    "hand": "Ambassador+Captain",
+    "n": 770,
+    "win": 22.6
+   },
+   {
+    "hand": "Captain+Contessa",
+    "n": 767,
+    "win": 20.3
    }
   ]
  },
  "seats": {
   "2": {
    "games": 800,
-   "firstWins": 48,
+   "firstWins": 46.6,
    "bySeat": [
-    48,
-    52
+    46.6,
+    53.4
    ],
-   "avgTurns": 13.1
+   "avgTurns": 12
   },
   "3": {
    "games": 600,
    "firstWins": 35.2,
    "bySeat": [
     35.2,
-    35.3,
-    29.5
+    33.7,
+    31.2
    ],
-   "avgTurns": 43.6
+   "avgTurns": 22.4
   },
   "4": {
    "games": 400,
-   "firstWins": 30.8,
+   "firstWins": 25,
    "bySeat": [
-    30.8,
-    28.3,
-    23,
-    18
+    25,
+    29,
+    25.5,
+    20.5
    ],
-   "avgTurns": 80.8
+   "avgTurns": 34.5
   },
   "5": {
    "games": 300,
-   "firstWins": 24,
+   "firstWins": 25.3,
    "bySeat": [
-    24,
-    19.7,
-    21.7,
-    16.3,
-    18.3
+    25.3,
+    22.3,
+    17.7,
+    15.7,
+    19
    ],
-   "avgTurns": 46.6
+   "avgTurns": 47.1
   },
   "6": {
    "games": 300,
-   "firstWins": 19.3,
+   "firstWins": 18.7,
    "bySeat": [
-    19.3,
-    14.7,
-    18.3,
-    19.3,
-    15,
-    13.3
+    18.7,
+    21.7,
+    18.7,
+    12.3,
+    16,
+    12.7
    ],
-   "avgTurns": 87.1
+   "avgTurns": 56.7
   }
  },
  "strength": {
@@ -144,21 +144,21 @@
    "three": 900
   },
   "hardVsEasy": {
-   "hard": 81,
-   "easy": 19
+   "hard": 83.1,
+   "easy": 16.9
   },
   "hardVsMedium": {
-   "hard": 51.9,
-   "medium": 48.1
+   "hard": 46.6,
+   "medium": 53.4
   },
   "mediumVsEasy": {
-   "medium": 74.1,
-   "easy": 25.9
+   "medium": 74.4,
+   "easy": 25.6
   },
   "threeWay": {
-   "easy": 11.7,
-   "medium": 32.8,
-   "hard": 55.6
+   "easy": 11.4,
+   "medium": 33.3,
+   "hard": 55.2
   }
  }
 }

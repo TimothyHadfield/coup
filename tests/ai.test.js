@@ -21,6 +21,20 @@ test('every level finishes 120 games of every size and variant with legal moves'
     }
   }
 });
+test('Hard games never loop: 200 three-player all-Hard games end within 150 turns', () => {
+  // two last-card players used to trade Assassinate / bluffed Contessa block forever
+  let worst = 0;
+  for (let g = 0; g < 200; g++) {
+    const s = E.newGame({ names: ['a', 'b', 'c'], seed: 900 + g });
+    let rnd = (() => { let a = g * 7 + 3; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
+    while (s.pending && s.turnNo < 300) {
+      const pd = s.pending;
+      E.act(s, AI.decide(E.view(s, pd.p), pd, 'hard', rnd, pd.kind === 'action' ? E.legalActions(s, pd.p) : null, s.rules).d);
+    }
+    worst = Math.max(worst, s.turnNo);
+  }
+  assert.ok(worst < 150, 'longest game ' + worst + ' turns');
+});
 test('the AI cannot see other hands (view has no card fields)', () => {
   const s = E.newGame({ names: ['a', 'b', 'c'], seed: 4 });
   const v = E.view(s, s.pending.p);

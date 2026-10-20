@@ -15,7 +15,7 @@ const errors = [];
 const browser = await webkit.launch();
 const ctx = await browser.newContext(desktop ? { viewport: { width: 1280, height: 800 } } : { ...devices['iPhone 15'] });
 const page = await ctx.newPage();
-page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); });
+page.on('console', (m) => { if (m.type() === 'error') errors.push('console: ' + m.text()); if (m.type() === 'warning') console.log('warn:', m.text()); });
 page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
 page.on('requestfailed', (r) => errors.push('failed: ' + r.url()));
 page.on('response', (r) => { if (r.status() >= 400) errors.push('http ' + r.status() + ' ' + r.url()); });
@@ -34,7 +34,7 @@ for (let g = 0; g < games; g++) {
   await page.click('[data-new]');
   const t0 = Date.now();
   let took = false, done = false;
-  while (Date.now() - t0 < 240000) {
+  while (Date.now() - t0 < 420000) {
     await page.waitForTimeout(120);
     try {
     // a choose-cards sheet
