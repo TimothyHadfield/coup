@@ -116,7 +116,8 @@
   // ======================================================================
   //   PLAY (vs computer)
   // ======================================================================
-  let G = null;        // live game wrapper (also saved in store.game)
+  let G = null;        // live game wrapper (also saved in store.game; online games are not saved)
+  let ME = 0;          // my seat: always 0 against computers, the room's seat online
   let GEN = 0;         // bumps on every new game / quit, so old timers stop
   const says = {};     // speech bubbles: p -> {text, until}
   let hint = null;     // {key, d, why}
@@ -148,7 +149,7 @@
     renderPlay();
   }
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  const isHuman = (p) => p === 0;
+  const isHuman = (p) => p === ME && !(G && G.online && G.sent);
 
   async function run(gen) {
     while (G && gen === GEN) {
@@ -176,7 +177,11 @@
     const s = G.s;
     const before = s.events.length;
     E.act(s, d);
-    const evs = s.events.slice(before);
+    noteEvents(s.events.slice(before));
+    save();
+  }
+  // speech bubbles for what just happened
+  function noteEvents(evs) {
     lastVisible = false;
     const now = Date.now();
     for (const e of evs) {
@@ -186,7 +191,7 @@
       else if (e.t === 'challenge') { txt = 'Challenge!'; p = e.by; }
       else if (e.t === 'prove') txt = 'Shows ' + e.char;
       else if (e.t === 'lose') txt = 'Loses ' + e.char;
-      if (txt && p !== 0) { says[p] = { text: txt, until: now + SPEED[S().speed] * 1.8 }; }
+      if (txt && p !== ME) { says[p] = { text: txt, until: now + SPEED[S().speed] * 1.8 }; }
       if (txt) lastVisible = true;
     }
     hint = null;
@@ -203,6 +208,7 @@
       G.calls.push({ ei, p: pd.claimant, char: pd.char, about: pd.about, action: pd.action, pTrue: claimOddsNow(), challenged: !!d.challenge, turnNo: s.turnNo });
     }
     selAction = null;
+    if (G.online) { netAct(d); return; }
     try { step(d); } catch (e) { toast('That move is not allowed.'); return; }
     renderPlay();
     run(GEN);
@@ -213,7 +219,7 @@
       if (!G.counted) {
         G.counted = true;
         const st = store.stats[G.level] || (store.stats[G.level] = { g: 0, w: 0 });
-        st.g++; if (G.s.winner === 0) st.w++;
+        st.g++; if (G.s.winner === ME) st.w++;
         store.lastWinner = G.s.winner;
       }
       save();
@@ -221,7 +227,7 @@
     renderPlay();
   }
 
-  function myView() { return E.view(G.s, 0); }
+  function myView() { return G.online ? window.CoupGame.mergeView(G.pub, G.mine, ME) : E.view(G.s, ME); }
   function posteriorNow() {
     if (!G) return null;
     try { return O.posterior(myView(), { bluff: S().bluff }); } catch (e) { return null; }
@@ -230,7 +236,7 @@
     const pd = G && G.s.pending;
     if (!pd || !(pd.kind === 'challenge' || pd.kind === 'block')) return null;
     const p = pd.kind === 'challenge' ? pd.claimant : pd.actor;
-    if (p === 0) return null;
+    if (p === ME) return null;
     const char = pd.kind === 'challenge' ? pd.char : E.actionDef(G.s, pd.action).claim;
     if (!char) return null;
     const post = posteriorNow();
@@ -238,27 +244,27 @@
   }
 
   function logLine(e, s) {
-    const nm = (i) => (i === 0 ? 'You' : s.players[i].name);
+    const nm = (i) => (i === ME ? 'You' : s.players[i].name);
     switch (e.t) {
       case 'action': {
         const tg = e.target >= 0 ? ' ' + nm(e.target) : '';
-        return { txt: `${nm(e.p)} ${VERB[e.action]}${tg}${e.claim ? ` (${e.claim})` : ''}`, me: e.p === 0 || e.target === 0 };
+        return { txt: `${nm(e.p)} ${VERB[e.action]}${tg}${e.claim ? ` (${e.claim})` : ''}`, me: e.p === ME || e.target === ME };
       }
-      case 'block': return { txt: `${nm(e.p)} blocks with ${e.char}`, me: e.p === 0 || e.actor === 0 };
+      case 'block': return { txt: `${nm(e.p)} blocks with ${e.char}`, me: e.p === ME || e.actor === ME };
       case 'noblock': return null;
-      case 'challenge': return { txt: `${nm(e.by)} challenges ${nm(e.of)}: ${e.truth ? 'it was true' : 'caught a bluff!'}`, me: e.by === 0 || e.of === 0, big: true };
-      case 'prove': return { txt: `${nm(e.p)} shows ${e.char}, shuffles it in, draws anew`, me: e.p === 0 };
-      case 'lose': return { txt: `${nm(e.p)} loses ${e.char}`, me: e.p === 0, big: true };
-      case 'out': return { txt: `${nm(e.p)} is out`, me: e.p === 0, big: true };
+      case 'challenge': return { txt: `${nm(e.by)} challenges ${nm(e.of)}: ${e.truth ? 'it was true' : 'caught a bluff!'}`, me: e.by === ME || e.of === ME, big: true };
+      case 'prove': return { txt: `${nm(e.p)} shows ${e.char}, shuffles it in, draws anew`, me: e.p === ME };
+      case 'lose': return { txt: `${nm(e.p)} loses ${e.char}`, me: e.p === ME, big: true };
+      case 'out': return { txt: `${nm(e.p)} is out`, me: e.p === ME, big: true };
       case 'gain': return null;
-      case 'steal': return { txt: `${nm(e.p)} takes ${e.n} from ${nm(e.target)}`, me: e.p === 0 || e.target === 0 };
-      case 'refund': return { txt: `${nm(e.p)} gets ${e.n} coins back`, me: e.p === 0 };
-      case 'fail': return e.blocked ? { txt: `${nm(e.p)}'s ${E.ACTIONS[e.action].label} is blocked`, me: e.p === 0 } : null;
-      case 'exchange': return { txt: `${nm(e.p)} swaps cards with the deck`, me: e.p === 0 };
-      case 'shown': return { txt: `${nm(e.p)} shows a card to ${nm(e.to)}`, me: e.p === 0 || e.to === 0 };
-      case 'forced': return { txt: `${nm(e.by)} makes ${nm(e.p)} swap it`, me: e.p === 0 || e.by === 0 };
-      case 'kept': return { txt: `${nm(e.by)} lets ${nm(e.p)} keep it`, me: e.p === 0 || e.by === 0 };
-      case 'win': return { txt: `${nm(e.p)} win${e.p === 0 ? '' : 's'}!`, me: true, big: true };
+      case 'steal': return { txt: `${nm(e.p)} takes ${e.n} from ${nm(e.target)}`, me: e.p === ME || e.target === ME };
+      case 'refund': return { txt: `${nm(e.p)} gets ${e.n} coins back`, me: e.p === ME };
+      case 'fail': return e.blocked ? { txt: `${nm(e.p)}'s ${E.ACTIONS[e.action].label} is blocked`, me: e.p === ME } : null;
+      case 'exchange': return { txt: `${nm(e.p)} swaps cards with the deck`, me: e.p === ME };
+      case 'shown': return { txt: `${nm(e.p)} shows a card to ${nm(e.to)}`, me: e.p === ME || e.to === ME };
+      case 'forced': return { txt: `${nm(e.by)} makes ${nm(e.p)} swap it`, me: e.p === ME || e.by === ME };
+      case 'kept': return { txt: `${nm(e.by)} lets ${nm(e.p)} keep it`, me: e.p === ME || e.by === ME };
+      case 'win': return { txt: `${nm(e.p)} win${e.p === ME ? '' : 's'}!`, me: true, big: true };
       default: return null;
     }
   }
@@ -274,7 +280,7 @@
   function renderPlay() {
     const root = $('#tab-play');
     if (store.tab !== 'play') return;
-    if (!G) { root.innerHTML = setupHTML(); return; }
+    if (!G) { root.innerHTML = NET ? lobbyHTML() : setupHTML(); return; }
     const s = G.s;
     const pd = s.pending;
     const post = S().showOdds ? posteriorNow() : null;
@@ -284,7 +290,7 @@
 
     // --- opponents
     const opps = s.players.map((pl, i) => {
-      if (i === 0) return '';
+      if (i === ME) return '';
       const isAlive = E.alive(pl);
       const reveal = G.over || S().peek;
       const cards = pl.cards.map((cd, k) => {
@@ -301,15 +307,17 @@
       const isTurn = !G.over && s.ctx && s.ctx.actor === i;
       const targetable = myTurn && pd.kind === 'action' && selAction && isAlive;
       const targeted = s.ctx && s.ctx.target === i && s.ctx.action;
+      const seatInfo = G.online && SNAP && SNAP.seats ? SNAP.seats[i] : null;
+      const away = seatInfo && seatInfo.kind === 'human' && !seatInfo.online ? ' <small class="away">away</small>' : '';
       return `<div class="opp ${isTurn ? 'turn' : ''} ${isAlive ? '' : 'out'} ${targetable ? 'targetable' : ''} ${targeted ? 'targeted' : ''}" data-opp="${i}">
-        ${sy}<div class="top"><span class="nm">${esc(pl.name)}</span>${coin(pl.coins)}</div>
+        ${sy}<div class="top"><span class="nm">${esc(pl.name)}${away}</span>${coin(pl.coins)}</div>
         <div class="mid"><div class="cards">${cards}</div>${bars}</div></div>`;
     }).join('');
 
     // --- stage
     const stage = stageHTML();
     // --- me
-    const me = s.players[0];
+    const me = s.players[ME];
     const pickMine = myTurn && (pd.kind === 'lose' || pd.kind === 'show');
     const myCards = me.cards.map((cd, k) => {
       if (cd.dead) {
@@ -321,7 +329,7 @@
     }).join('');
     const canHint = myTurn && !G.over;
     // --- actions
-    const legal = myTurn && pd.kind === 'action' ? E.legalActions(s, 0) : [];
+    const legal = myTurn && pd.kind === 'action' ? E.legalActions(s, ME) : [];
     const acts = E.ACTION_ORDER.filter((a) => a !== 'examine' || s.rules.inquisitor).map((a) => {
       const def = E.actionDef(s, a);
       const ok = legal.some((l) => l.action === a);
@@ -344,7 +352,7 @@
       <div class="stage">${stage}</div>
       <div class="me-row"><div class="cards">${myCards}</div>
         <div class="side">${coin(me.coins)}
-          <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}<button class="btn small ghost" data-quit="1">${G.over ? 'Close' : 'Quit'}</button></div></div></div>
+          <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}<button class="btn small ghost" data-quit="1">${G.online ? 'Leave' : G.over ? 'Close' : 'Quit'}</button></div></div></div>
       <div class="actions">${acts}</div>
     </div>${side}</div>`;
 
@@ -361,7 +369,7 @@
     if (!post) return '<p class="muted" style="margin:0">Odds are off in Settings.</p>';
     const head = `<tr><th></th>${chars.map((c) => `<th><span class="chip" style="background:${COLORS[c]}"></span>${c.slice(0, 4)}</th>`).join('')}</tr>`;
     const rows = s.players.map((pl, i) => {
-      if (i === 0 || !post[i]) return '';
+      if (i === ME || !post[i]) return '';
       return `<tr><td>${esc(pl.name)}</td>${chars.map((c) => `<td style="color:${scale(post[i].has[c])}">${pctTxt(post[i].has[c])}</td>`).join('')}</tr>`;
     }).join('');
     const v = myView();
@@ -372,12 +380,12 @@
   function stageHTML() {
     const s = G.s;
     const pd = s.pending;
-    const nm = (i) => (i === 0 ? 'You' : s.players[i].name);
+    const nm = (i) => (i === ME ? 'You' : s.players[i].name);
     if (G.over || !pd) {
       const w = s.winner;
-      return `<div class="what"><div class="txt"><div class="t1">${w === 0 ? 'You win!' : esc(nm(w)) + ' wins'}</div>
-        <div class="t2">${w === 0 ? 'Last one standing.' : 'See every hidden card and your calls.'}</div></div></div>
-        <div class="acts"><button class="btn warm" data-review="1">Review</button><button class="btn primary" data-new="1">New game</button></div>`;
+      return `<div class="what"><div class="txt"><div class="t1">${w === ME ? 'You win!' : esc(nm(w)) + ' wins'}</div>
+        <div class="t2">${w === ME ? 'Last one standing.' : 'See every hidden card and your calls.'}</div></div></div>
+        <div class="acts"><button class="btn warm" data-review="1">Review</button>${G.online ? '<button class="btn primary" data-netleave="1">Leave room</button>' : '<button class="btn primary" data-new="1">New game</button>'}</div>`;
     }
     const why = hint && hint.why ? `<div class="why">Hint: ${esc(hint.why)}</div>` : '';
     if (!isHuman(pd.p)) {
@@ -393,7 +401,7 @@
         return `<div class="what"><div class="txt"><div class="t1">Your turn</div><div class="t2">${pd.mustCoup ? '10+ coins: you must Coup.' : 'Pick an action below.'}</div></div></div>${why}`;
       case 'challenge': {
         const p = claimOddsNow();
-        const blockTxt = pd.about === 'block' ? `blocks ${pd.actor === 0 ? 'your' : nm(pd.actor) + "'s"} ${E.ACTIONS[pd.action].label}` : (WHAT[pd.action] || '') + (pd.target === 0 ? ' from you' : pd.target >= 0 && pd.action !== 'tax' ? ' · ' + nm(pd.target) : '');
+        const blockTxt = pd.about === 'block' ? `blocks ${pd.actor === ME ? 'your' : nm(pd.actor) + "'s"} ${E.ACTIONS[pd.action].label}` : (WHAT[pd.action] || '') + (pd.target === ME ? ' from you' : pd.target >= 0 && pd.action !== 'tax' ? ' · ' + nm(pd.target) : '');
         return `<div class="what"><div class="txt"><div class="t1">${esc(nm(pd.claimant))} claims ${esc(pd.char)}</div><div class="t2">${esc(blockTxt)}</div></div>${pctBox(p)}</div>
           <div class="acts"><button class="btn danger ${H('challenge') === true ? 'hinted' : ''}" data-ch="1">Challenge</button><button class="btn ${hint && hint.d && hint.d.challenge === false ? 'hinted' : ''}" data-ch="0">Allow</button></div>${why}`;
       }
@@ -447,7 +455,7 @@
   function askHint() {
     const s = G.s, pd = s.pending;
     if (!pd || !isHuman(pd.p)) return;
-    const r = AI.decide(E.view(s, 0), pd, 'hard', Math.random, pd.kind === 'action' ? E.legalActions(s, 0) : null, s.rules);
+    const r = AI.decide(myView(), pd, 'hard', Math.random, pd.kind === 'action' ? E.legalActions(s, ME) : null, s.rules);
     hint = { d: r.d, why: r.why || 'No strong preference here.' };
     if (pd.kind === 'action' && r.d.target >= 0) hint.why += ` Target: ${s.players[r.d.target].name}.`;
     if ((pd.kind === 'lose' || pd.kind === 'show') && r.d.card != null) hint.why = r.why;
@@ -456,7 +464,7 @@
   // ---- after the game: what was true, which calls were right
   function openReview() {
     const s = G.s;
-    const nm = (i) => (i === 0 ? 'You' : s.players[i].name);
+    const nm = (i) => (i === ME ? 'You' : s.players[i].name);
     const items = [];
     let right = 0, wrong = 0, missed = 0, myBluffs = 0, caught = 0;
     const callsByEi = {};
@@ -469,7 +477,7 @@
       const challenged = ch && s.events.indexOf(ch) < (s.events.slice(ei + 1).findIndex((x) => x.t === 'turn') + ei + 1 || Infinity);
       const call = callsByEi[ei];
       let tag = '', cls = '', note = '';
-      if (e.p === 0) {
+      if (e.p === ME) {
         if (!truth) { myBluffs++; if (challenged) caught++; }
         tag = truth ? 'TRUE' : challenged ? 'CAUGHT' : 'BLUFF OK'; cls = truth ? 'ok' : challenged ? 'no' : 'ok';
         note = `You claimed ${char}${truth ? '' : ' (bluff)'}`;
@@ -500,6 +508,132 @@
       </div>`, () => closeSheet());
   }
 
+  // ======================================================================
+  //   ONLINE (shared online.js: room code, any seat a person or a computer)
+  // ======================================================================
+  let NET = null;       // the online room object
+  let SNAP = null;      // its latest snapshot
+  let netBusy = false;
+  async function netRoom() {
+    if (NET) return NET;
+    const mod = await import(new URL('js/online.js?v=1', document.baseURI).href);
+    NET = mod.createOnline({ game: window.CoupGame.game, gameId: 'coup', botDelayMs: SPEED[S().speed] });
+    NET.on('change', onSnap);
+    NET.on('error', (msg) => toast(String(msg && msg.message || msg)));
+    return NET;
+  }
+  function netName() { return (store.netName || '').trim().slice(0, 14) || 'Player'; }
+  async function netCreate() {
+    if (netBusy) return; netBusy = true;
+    try {
+      const room = await netRoom();
+      const n = 1 + Math.max(1, Math.min(5, S().opps));
+      const seats = [{ kind: 'human', name: netName() }].concat(Array.from({ length: n - 1 }, () => 'empty'));
+      const r = await room.createRoom({ name: netName(), seats, options: { level: S().level, inquisitor: S().inquisitor, twoDeal: S().twoDeal } });
+      if (!r.ok) toast(r.message || 'Could not make a room.');
+      else { store.netOn = true; save(); closeSheet(); }
+    } catch (e) { toast('Online play could not load. Check the connection.'); }
+    netBusy = false; renderPlay();
+  }
+  async function netJoin(code) {
+    code = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (code.length !== 5) { toast('Room codes have 5 letters.'); return; }
+    if (netBusy) return; netBusy = true;
+    try {
+      const room = await netRoom();
+      const r = await room.joinRoom(code, netName());
+      if (!r.ok) toast(r.message || 'Could not join.');
+      else { store.netOn = true; save(); closeSheet(); }
+    } catch (e) { toast('Online play could not load. Check the connection.'); }
+    netBusy = false; renderPlay();
+  }
+  async function netLeave() {
+    const room = NET;
+    NET = null; SNAP = null; G = null; ME = 0;
+    store.netOn = false; save();
+    closeSheet(); renderPlay();
+    if (room) { try { await room.leave(); } catch (e) { /* already gone */ } }
+  }
+  async function netAct(d) {
+    if (!NET) return;
+    G.sent = true; renderPlay();
+    const r = await NET.act(d);
+    if (!r || !r.ok) { G.sent = false; toast((r && r.message) || 'That move did not go through.'); renderPlay(); }
+  }
+  function onSnap(snap) {
+    SNAP = snap;
+    if (!snap || ['none', 'closed', 'left'].includes(snap.status)) {
+      if (snap && snap.status === 'closed') toast('The host closed the room.');
+      if (snap && snap.status !== 'none') { NET = null; store.netOn = false; save(); }
+      SNAP = null; G = null; ME = 0;
+      renderPlay(); return;
+    }
+    if ((snap.status === 'playing' || snap.status === 'finished') && snap.pub) {
+      const fresh = !G || !G.online;
+      if (fresh) {
+        GEN++;                       // stop any local game loop
+        G = { online: true, calls: [], over: false, level: snap.pub.level, seen: 0 };
+        shownDead = new Set(); hint = null; selAction = null;
+        for (const k in says) delete says[k];
+      }
+      ME = snap.mySeat;
+      G.pub = snap.pub; G.mine = snap.mine;
+      G.s = window.CoupGame.stateFromView(snap.pub, snap.mine, ME);
+      G.sent = false;
+      const evs = G.s.events;
+      if (!fresh && evs.length > G.seen) noteEvents(evs.slice(G.seen));
+      G.seen = evs.length;
+      G.over = snap.status === 'finished' || G.s.winner >= 0;
+      const pd = G.s.pending;
+      if (!G.over && pd && pd.p === ME && (pd.kind === 'exchange' || pd.kind === 'pick')) {
+        if (!$('.sheet .choose')) openExchange();
+      }
+    } else {
+      G = null;                      // lobby
+    }
+    if (store.tab === 'play') renderPlay();
+  }
+  function lobbyHTML() {
+    const sn = SNAP || {};
+    if (!sn.seats) return `<div class="setup-wrap"><div class="panel"><h2>Online</h2><p class="muted">${sn.status === 'joining' ? 'Asking the host to let you in…' : 'Connecting…'}</p>
+      <button class="btn" data-netleave="1" style="width:100%">Cancel</button></div></div>`;
+    const o = sn.options || {};
+    const seats = sn.seats.map((st, i) => {
+      const who = st.kind === 'empty' ? '<span class="muted">Open seat</span>' : esc(st.name) + (st.kind === 'computer' ? ' <span class="muted">· computer</span>' : '') + (i === sn.mySeat ? ' <span class="muted">· you</span>' : '') + (st.isHost ? ' <span class="muted">· host</span>' : '');
+      const btn = sn.isHost && i !== sn.mySeat && st.kind !== 'human' ? `<button class="btn small" data-seat="${i}">${st.kind === 'empty' ? 'Computer' : 'Open'}</button>` : '';
+      return `<div class="seatrow"><span class="dot ${st.kind === 'human' && !st.online ? 'off' : st.kind}"></span><span class="nm">${who}</span>${btn}</div>`;
+    }).join('');
+    const lv = { easy: 'Easy', medium: 'Medium', hard: 'Hard' }[o.level] || 'Medium';
+    const vars = [o.inquisitor ? 'Inquisitor' : '', o.twoDeal && sn.seats.length === 2 ? '2-player deal' : ''].filter(Boolean).join(' · ');
+    return `<div class="setup-wrap">
+      <div class="panel lobby"><h2>Room code <button class="q" data-help="online" aria-label="How online works">?</button></h2>
+        <div class="code">${esc(sn.code || '')}</div>
+        <p class="muted" style="margin:0">Friends open this site, tap Online, and type the code.</p></div>
+      <div class="panel"><h2>Seats</h2>${seats}
+        <p class="muted" style="margin:8px 0 0;font-size:13px">Computers play ${lv}${vars ? ' · ' + vars : ''}. Open seats left at the start become computers.</p></div>
+      ${sn.isHost ? '<button class="btn primary" data-netstart="1" style="width:100%;min-height:50px;font-size:17px">Start game</button>' : '<p class="muted" style="text-align:center">Waiting for the host to start…</p>'}
+      <button class="btn ghost" data-netleave="1" style="width:100%;margin-top:8px">Leave room</button>
+    </div>`;
+  }
+  function openOnline() {
+    sheet(`<h3>Play online <button class="btn small ghost" data-s="x">Close</button></h3>
+      <div class="body">
+        <label class="field"><span>Your name</span><input type="text" maxlength="14" id="netName" value="${esc(store.netName || '')}" placeholder="Name" autocomplete="nickname"></label>
+        <button class="btn primary" data-s="create" style="width:100%;min-height:46px">Make a room</button>
+        <p class="muted" style="margin:2px 0 10px;font-size:13px">${1 + S().opps} seats (your Opponents setting). You pick which are friends and which are computers.</p>
+        <div class="label">Or join one</div>
+        <div class="row" style="gap:8px"><input type="text" id="netCode" maxlength="5" placeholder="CODE" autocapitalize="characters" autocomplete="off" spellcheck="false" style="flex:1;text-transform:uppercase;letter-spacing:4px;font-weight:700"><button class="btn warm" data-s="join">Join</button></div>
+      </div>`,
+    (k) => {
+      const nameEl = $('#netName');
+      if (nameEl) { store.netName = nameEl.value.trim().slice(0, 14); save(); }
+      if (k === 'x') { closeSheet(); return; }
+      if (!store.netName) { toast('Type your name first.'); if (nameEl) nameEl.focus(); return; }
+      if (k === 'create') netCreate();
+      if (k === 'join') netJoin(($('#netCode') || {}).value);
+    });
+  }
+
   function setupHTML() {
     const st = S();
     const lv = (k, label, note) => `<button class="${st.level === k ? 'on' : ''}" data-level="${k}">${label}<small>${note}</small></button>`;
@@ -518,7 +652,7 @@
       <div class="panel"><h2>Opponents</h2><div class="seg">${[1, 2, 3, 4, 5].map((n) => `<button class="${st.opps === n ? 'on' : ''}" data-opps="${n}">${n}</button>`).join('')}</div></div>
       <div class="panel"><h2>Computer level <button class="q" data-help="strength" aria-label="How strong">?</button></h2>
         <div class="seg">${lv('easy', 'Easy', notes.easy)}${lv('medium', 'Medium', notes.medium)}${lv('hard', 'Hard', notes.hard)}</div></div>
-      <button class="btn primary" data-new="1" style="width:100%;min-height:50px;font-size:17px">Deal</button>${resume}
+      <div class="row" style="gap:8px"><button class="btn primary" data-new="1" style="flex:2;min-height:50px;font-size:17px">Deal</button><button class="btn" data-online="1" style="flex:1;min-height:50px">Online</button></div>${resume}
       <div class="record">Your wins: ${rec}</div>
     </div>`;
   }
@@ -721,6 +855,7 @@
     strength: 'Each level played thousands of games against the others with seats rotated, so the numbers are measured, not guessed. Hard weighs the odds of each claim against what a challenge risks; Medium uses the same odds more timidly; Easy plays honest and calls bluffs at random.',
     bluff: 'How often a player who does NOT hold a card still claims it, compared with a player who does. Pick what fits your table; it changes every odds number.',
     twodeal: 'The rulebook\'s 2-player setup: each player picks 1 card from a set of all five characters and sets the other 4 aside face down, then gets 1 random card. The deck is only 3 cards.',
+    online: 'Make a room and share the 5-letter code. Each seat is a friend or a computer. The host’s browser runs the computers and checks every move, and each player’s cards are only ever sent to that player. If someone drops out, a computer keeps their seat going; reloading the page puts you back in.',
     table: 'Use this with real cards. Record each turn with a few taps; the odds update for every claim. If you add your own cards, the odds count them too. Bluff habits of each name carry over between games.',
   };
 
@@ -738,8 +873,21 @@
     if (ds.opps) { S().opps = +ds.opps; save(); renderPlay(); return; }
     if (ds.level) { S().level = ds.level; save(); renderPlay(); return; }
     if (ds.new) { closeSheet(); newGame(); return; }
+    if (ds.online) { openOnline(); return; }
+    if (ds.netleave) {
+      if (G && !G.over) { confirmBox('Leave this game?', 'A computer takes over your seat.', 'Leave', netLeave); return; }
+      netLeave(); return;
+    }
+    if (ds.netstart) { if (NET) NET.start().then((r) => { if (r && !r.ok) toast(r.message); }); return; }
+    if (ds.seat != null) {
+      if (!NET || !SNAP || !SNAP.seats) return;
+      const st = SNAP.seats[+ds.seat];
+      NET.setSeat(+ds.seat, st.kind === 'empty' ? 'computer' : 'empty').then((r) => { if (r && !r.ok) toast(r.message); });
+      return;
+    }
     if (ds.resume) { G = store.game; renderPlay(); run(++GEN); return; }
     if (ds.quit) {
+      if (G && G.online) { if (G.over) netLeave(); else confirmBox('Leave this game?', 'A computer takes over your seat.', 'Leave', netLeave); return; }
       if (G && G.over) { quitGame(); return; }
       confirmBox('Quit this game?', 'It will count as unfinished.', 'Quit', quitGame); return;
     }
@@ -851,5 +999,10 @@
   }
   setTab(store.tab || 'play');
   if (G && !G.over) run(++GEN);
-  window.__coup = { get G() { return G; }, store: () => store, newGame, step: (d) => human(d) };
+  // back into an online room after a reload
+  if (store.netOn) {
+    netRoom().then((room) => room.resume()).then((ok) => { if (!ok) { NET = null; store.netOn = false; save(); renderPlay(); } })
+      .catch(() => { NET = null; store.netOn = false; save(); renderPlay(); });
+  }
+  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, newGame, step: (d) => human(d) };
 })();
