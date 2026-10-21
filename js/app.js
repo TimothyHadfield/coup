@@ -203,9 +203,15 @@
     try { await runLoop(gen); } catch (e) { console.error('game loop', e); }
     finally { loops--; }
   }
+  // Two tabs with the same game: only the tab you last touched moves the computers;
+  // the other one follows along through the saved game (see the 'storage' listener).
+  const TAB_ID = Math.random().toString(36).slice(2);
+  const DRIVER = 'coup:driver';
+  function claimDriver() { try { localStorage.setItem(DRIVER, TAB_ID); } catch (e) { /* storage blocked: this tab drives */ } }
+  function isDriver() { try { const d = localStorage.getItem(DRIVER); return !d || d === TAB_ID; } catch (e) { return true; } }
   // Safety net: if a computer is due to move and no game loop is running, start one.
   setInterval(() => {
-    if (!G || G.online || G.over || !G.s.pending || isHuman(G.s.pending.p)) return;
+    if (!G || G.online || G.over || !G.s.pending || isHuman(G.s.pending.p) || !isDriver()) return;
     if (loops && Date.now() - tick < 10000) return;
     revived++; console.warn('game loop restarted', loops, G.s.turnNo);
     run(++GEN);
@@ -222,7 +228,7 @@
         return;
       }
       await sleep(pd.kind === 'action' ? SPEED[S().speed] * 0.5 : 60);
-      if (!G || gen !== GEN) return;
+      if (!G || gen !== GEN || !isDriver()) return;
       const view = E.view(s, pd.p);
       const legal = pd.kind === 'action' ? E.legalActions(s, pd.p) : null;
       const r = AI.decide(view, pd, G.level, Math.random, legal, s.rules);
@@ -233,6 +239,10 @@
     }
   }
   let lastVisible = false;
+  let promptKey = '', promptAt = 0;
+  const FRESH_MS = 350;   // taps made this soon after a new question (or before it) are the tail of a double tap
+  // when the tap really happened (event.timeStamp is set at the touch, even if the page was busy), on performance.now()'s clock
+  const tapTime = (e) => (e && e.timeStamp > 0 && e.timeStamp < performance.now() + 1000 ? e.timeStamp : performance.now());
   function step(d) {
     const s = G.s;
     const before = s.events.length;
@@ -480,6 +490,9 @@
     const myTurn = pd && isHuman(pd.p);
     const now = Date.now();
     const chars = s.rules.chars;
+    // a new question for you: note when it appeared, so a double tap meant for the last one can't answer it
+    const pKey = myTurn ? s.events.length + ':' + pd.kind + ':' + s.turnNo : '';
+    if (pKey !== promptKey) { promptKey = pKey; promptAt = performance.now(); }
 
     // --- opponents, seated round the far side (laptop: an arc, outer seats nearer to you)
     const nOpp = s.players.length - 1;
@@ -581,7 +594,7 @@
     const nm = (i) => (i === ME ? 'You' : s.players[i].name);
     if (G.over || !pd) {
       const w = s.winner;
-      return `<div class="what"><div class="txt"><div class="t1">${w === ME ? 'You win!' : esc(nm(w)) + ' wins'}</div>
+      return `<div class="what"><div class="txt"><div class="t1">${w === ME ? 'You win!' : w >= 0 ? esc(nm(w)) + ' wins' : 'Game over'}</div>
         <div class="t2">${w === ME ? 'Last one standing.' : 'See every hidden card and your calls.'}</div></div></div>
         <div class="acts"><button class="btn warm" data-review="1">Review</button>${G.online ? '<button class="btn primary" data-netleave="1">Leave room</button>' : '<button class="btn primary" data-new="1">New game</button>'}</div>`;
     }
@@ -717,8 +730,13 @@
     const mod = await import(new URL('js/online.js?v=1', document.baseURI).href);
     NET = mod.createOnline({ game: window.CoupGame.game, gameId: 'coup', botDelayMs: SPEED[S().speed] });
     NET.on('change', onSnap);
-    NET.on('error', (msg) => toast(String(msg && msg.message || msg)));
+    NET.on('error', (msg) => toast(netMsg(msg && msg.message || msg)));
     return NET;
+  }
+  // a browser's technical error ("Importing a module script failed.") in words a player understands
+  function netMsg(m) {
+    m = String(m || '');
+    return !m || /import|module|fetch|network|load|offline|unavailable|timeout|failed/i.test(m) ? 'Can\'t reach the online server. Check your connection and try again.' : m;
   }
   function netName() { return (store.netName || '').trim().slice(0, 14) || 'Player'; }
   async function netCreate() {
@@ -728,7 +746,7 @@
       const n = 1 + Math.max(1, Math.min(5, S().opps));
       const seats = [{ kind: 'human', name: netName() }].concat(Array.from({ length: n - 1 }, () => 'empty'));
       const r = await room.createRoom({ name: netName(), seats, options: { level: S().level, inquisitor: S().inquisitor, twoDeal: S().twoDeal } });
-      if (!r.ok) toast(r.message || 'Could not make a room.');
+      if (!r.ok) toast(r.message ? netMsg(r.message) : 'Could not make a room.');
       else { store.netOn = true; save(); closeSheet(); }
     } catch (e) { toast('Online play could not load. Check the connection.'); }
     netBusy = false; renderPlay();
@@ -741,7 +759,7 @@
     try {
       const room = await netRoom();
       const r = await room.joinRoom(code, netName());
-      if (!r.ok) toast(r.message || 'Could not join.');
+      if (!r.ok) toast(r.message ? netMsg(r.message) : 'Could not join.');
       else { store.netOn = true; save(); closeSheet(); }
     } catch (e) { toast('Online play could not load. Check the connection.'); }
     netBusy = false; renderPlay();
@@ -758,7 +776,7 @@
     G.sent = true; renderPlay();
     const r = await NET.act(d);
     netLog({ t: 'act', d, ok: !!(r && r.ok) });
-    if (!r || !r.ok) { G.sent = false; fxError(); toast((r && r.message) || 'That move did not go through.'); renderPlay(); }
+    if (!r || !r.ok) { G.sent = false; fxError(); toast(r && r.message ? netMsg(r.message) : 'That move did not go through.'); renderPlay(); }
   }
   // last few online events, for tests and bug reports (window.__coup.netLog)
   const NETLOG = [];
@@ -1097,11 +1115,11 @@
       if (G && !G.over) { confirmBox('Leave this game?', 'A computer takes over your seat.', 'Leave', netLeave); return; }
       netLeave(); return;
     }
-    if (ds.netstart) { if (NET) NET.start().then((r) => { if (r && !r.ok) toast(r.message); }); return; }
+    if (ds.netstart) { if (NET) NET.start().then((r) => { if (r && !r.ok) toast(netMsg(r.message)); }); return; }
     if (ds.seat != null) {
       if (!NET || !SNAP || !SNAP.seats) return;
       const st = SNAP.seats[+ds.seat];
-      NET.setSeat(+ds.seat, st.kind === 'empty' ? 'computer' : 'empty').then((r) => { if (r && !r.ok) toast(r.message); });
+      NET.setSeat(+ds.seat, st.kind === 'empty' ? 'computer' : 'empty').then((r) => { if (r && !r.ok) toast(netMsg(r.message)); });
       return;
     }
     if (ds.resume) { G = store.game; renderPlay(); run(++GEN); return; }
@@ -1116,6 +1134,7 @@
     if (G && G.s.pending && isHuman(G.s.pending.p)) {
       const pd = G.s.pending;
       if (ds.hint) { askHint(); renderPlay(); return; }
+      if ((ds.act || ds.opp != null || ds.ch != null || ds.blk != null || ds.card != null || ds.exam != null) && tapTime(e) - promptAt < FRESH_MS) return;
       if (ds.act && pd.kind === 'action') {
         const a = ds.act;
         if (E.ACTIONS[a].target) { selAction = selAction === a ? null : a; renderPlay(); return; }
@@ -1219,15 +1238,32 @@
     }   // no re-render: keeps the keyboard up
     if (t.dataset.calc) { calc[t.dataset.calc] = +t.value; if (calc.copies > calc.unseen) calc.copies = calc.unseen; renderLearn(); }
   });
-  // the table "you" buttons show names: refresh them when a name field loses focus
+  // the same game open in another tab: follow what it saves, so neither tab plays a stale copy
+  window.addEventListener('storage', (e) => {
+    if (e.key !== KEY || !e.newValue || (G && G.online)) return;
+    const tab = store.tab;
+    store = load(); store.tab = tab;
+    const g = store.game && store.game.s ? store.game : null;
+    GEN++;
+    G = g;
+    if (G) { hint = null; selAction = null; }
+    if ($('#overlay .choose') && !(G && G.s.pending && (G.s.pending.kind === 'exchange' || G.s.pending.kind === 'pick') && isHuman(G.s.pending.p))) closeSheet();
+    render();
+    if (G && !G.over && isDriver()) run(++GEN);
+  });
+  // touching this tab makes it the one that moves the computers
+  document.addEventListener('pointerdown', () => {
+    if (isDriver()) return;
+    claimDriver();
+    if (G && !G.online && !G.over) run(++GEN);
+  }, true);
 
 
   // ------------------------------------------------------------------ boot
   fetch('data/stats.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => { strength = j; render(); }).catch(() => {});
-  if (store.game && store.game.s && store.game.s.pending !== undefined) {
-    G = store.game;
-    if (G.over) G = null;
-  }
+  // a finished game stays on the table after a reload (result + Review), until Close or New game
+  if (store.game && store.game.s && store.game.s.pending !== undefined) G = store.game;
+  claimDriver();
   try { history.replaceState({ tab: store.tab || 'play' }, ''); } catch (e) { /* history blocked */ }
   setTab(store.tab || 'play', true);
   if (G && !G.over) run(++GEN);

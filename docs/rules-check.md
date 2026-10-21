@@ -104,3 +104,9 @@ Your stated choices compared with the official rules:
   5. **Exchange privacy:** others see only that 2 cards (1 with the Inquisitor) went back, not which.
   6. **The official 2-player variant** (pick 1 from 5, 3-card Court) and the **Inquisitor** are not in your list. Both are official settings worth adding.
   7. Coins are finite (50). If the Treasury ever runs dry, pay what is there. This is *reasoned* and almost never happens.
+     *Measured 2026-10-20:* in 2,100 computer games (2–6 players, every variant) the most coins ever held at once was 38, so the engine does not model an empty Treasury.
+
+## Edge checks (2026-10-20)
+- Court deck during play never went below 1 card (6 players mid-Exchange); it is empty only before the 2-player-variant picks are made.
+- A player who challenges a block on their own turn and loses their last card is out; the action fails and play passes on (RB: challenges resolve first). An Examine target who loses their last card to a failed challenge is out before showing a card.
+- No rules gaps found in this pass; no rule changed.

@@ -29,3 +29,9 @@
 - **Built:** shared `_table` kit copied in; Play tab is now a wood table: Court deck stack and Treasury coin heap in the middle, opponents on an arc with name plates, your cards tilted in front of you with a coin pile, actions on a reference card; deals and returns fly to/from the deck, coins slide between players and the Treasury. fx.js re-copied (1.0.3). No rule changes.
 - **Verified:** engine 24, odds 9, table 4, online node test, `ui.play.mjs` (393 + 1280), `ui.fx.mjs`, `ui.online.mjs`; before/after shots of setup/mid/late/end at 393, 1280, 320 and 659 landscape with no errors, overflow, page scroll or off-screen buttons; Effects speed doesn't change the game Speed.
 - **Open:** reviewer sub-agent not run; Tim's phone check.
+
+## 2026-10-20 — weird-situation pass (builder agent)
+- **Asked (Tim):** "focus on making each game perfect especially in scenarios that the game doesn't expect or are a little weird." Plus the table-look outside review that was skipped.
+- **Built:** double-tap guard on every decision; finished game survives a reload; two tabs stay in step (one drives the computers); plain-words offline message; no-winner end screen guard; review fixes (lighter lost cards, whole-line log strip, faint 0 coins). New `tests/ui.edge.mjs`. No rules changes (none were wrong).
+- **Verified:** 53 scenarios (list in progress.md); the 5 failures each failed on the old code and pass now; 2,100-game node simulation for rules oddities; engine/odds/table/online node tests, `ui.play.mjs` (393 + 1280), `ui.fx.mjs`.
+- **Open:** background-for-10-minutes, Firestore drop mid-game, real iPhone.

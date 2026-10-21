@@ -14,4 +14,5 @@
 - Node: `node tests/engine.test.js`, `odds.test.js`, `table.test.js`, `node tests/online.test.mjs` (~3 min), `ai.test.js` (slow, strength asserts).
 - Browser (WebKit, headless): serve the folder (`python -m http.server 18473 --bind 127.0.0.1`, background), then `node tests/ui.play.mjs <url> 2 <outDir>` (+ `--desktop`) plays whole games by tapping; `node tests/ui.online.mjs <url> <outDir>` runs two browsers in one real online room (uses a little of the shared free quota).
 - Sound & effects: `node tests/ui.fx.mjs <url> <outDir>` (3 short games: all on, Sound off, Animations off).
+- Weird situations: `node tests/ui.edge.mjs <url> <outDir> [ids]` (41 checks: odd sizes, double taps, reloads, two tabs, offline online; one check briefly makes a real online room).
 - Bump `?v=N` on every script/style in `index.html` and `js/build.js` when shipping.
