@@ -69,7 +69,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 
 ## Traps
 - Double-tap guard: decision taps (actions, targets, Challenge/Allow, Block, lose/show card, Examine) within 350 ms of a new question are dropped (`promptAt`, `tapTime(e)` uses `event.timeStamp`). Tests that tap a prompt the instant it appears must wait ~400 ms first.
-- Two tabs: `localStorage['coup:driver']` holds the id of the tab that moves the computers (claimed on load and on any pointerdown). The other tab follows through the `storage` event. Storage blocked = every tab drives (only one tab can exist then anyway).
+- Two tabs: `localStorage['coup:driver']` holds the id of the tab that moves the computers (claimed on load and on any pointerdown). The other tab follows through the `storage` event. Never re-render on pointerdown: it swapped the button out from under the finger and lost the first tap in the other tab (shipped in 5c2c5d1, fixed in the next commit; the loop now restarts after pointerup). Storage blocked = every tab drives (only one tab can exist then anyway).
 - Headless WebKit on a loaded machine stretches page timers by seconds; `ui.edge.mjs` makes double taps with in-page events stamped at tap time, and finishes the sheet slide-in with `getAnimations().finish()` before measuring.
 - `js/online.js` is a copy of `../_online/online.js`; don't edit it here.
 - Python writes on Windows can turn `\b` in a string into a real backspace char; edit JS with the Edit tool or byte-safe scripts.

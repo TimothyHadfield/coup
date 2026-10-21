@@ -1251,11 +1251,14 @@
     render();
     if (G && !G.over && isDriver()) run(++GEN);
   });
-  // touching this tab makes it the one that moves the computers
+  // touching this tab makes it the one that moves the computers.
+  // The loop restarts only after the tap has finished: re-drawing on pointerdown would swap the
+  // button out from under the finger and the tap would be lost.
   document.addEventListener('pointerdown', () => {
     if (isDriver()) return;
     claimDriver();
-    if (G && !G.online && !G.over) run(++GEN);
+    const go = () => { setTimeout(() => { if (G && !G.online && !G.over && isDriver()) run(++GEN); }, 0); };
+    document.addEventListener('pointerup', go, { once: true, capture: true });
   }, true);
 
 

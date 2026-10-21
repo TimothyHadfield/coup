@@ -35,3 +35,4 @@
 - **Built:** double-tap guard on every decision; finished game survives a reload; two tabs stay in step (one drives the computers); plain-words offline message; no-winner end screen guard; review fixes (lighter lost cards, whole-line log strip, faint 0 coins). New `tests/ui.edge.mjs`. No rules changes (none were wrong).
 - **Verified:** 53 scenarios (list in progress.md); the 5 failures each failed on the old code and pass now; 2,100-game node simulation for rules oddities; engine/odds/table/online node tests, `ui.play.mjs` (393 + 1280), `ui.fx.mjs`.
 - **Open:** background-for-10-minutes, Firestore drop mid-game, real iPhone.
+- **Follow-up (same day):** a tighter two-tab test showed the first tap in the other tab was lost (the driver hand-off re-drew the table on pointerdown). Fixed: the loop restarts after pointerup. Test failed on 5c2c5d1 live, passes on the fix.

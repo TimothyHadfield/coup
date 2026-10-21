@@ -224,6 +224,8 @@ await scenario('R-two-tabs', 'same game open in two tabs: a move in one tab is n
   const p1 = await ctx.newPage(); const p2 = await ctx.newPage();
   await p1.goto(url); await p1.evaluate(() => { const E = window.CoupEngine; const s = E.newGame({ names: ['You', 'Ava', 'Ben'], seed: 11, rules: {}, first: 0 }); localStorage.setItem('coup:v1', JSON.stringify({ settings: { speed: 'fast', opps: 2 }, tab: 'play', game: { s, level: 'medium', calls: [], over: false, counted: false } })); });
   await p1.reload(); await p2.goto(url); await p1.waitForTimeout(500);
+  await p1.waitForFunction(() => { const g = window.__coup.G; return g && g.s.pending && g.s.pending.p === 0; });
+  await p1.waitForTimeout(600);
   await p1.click('[data-act="income"]');
   await p1.waitForTimeout(4000);
   const a = await p1.evaluate(() => window.__coup.G.s.events.length);
@@ -232,7 +234,7 @@ await scenario('R-two-tabs', 'same game open in two tabs: a move in one tab is n
   const p2ev = await p2.evaluate(() => window.__coup.G && window.__coup.G.s.events.length);
   const saved = await p1.evaluate(() => JSON.parse(localStorage.getItem('coup:v1')).game.s.events.length);
   await ctx.close();
-  return { pass: p2ev >= a && saved >= a, note: `tab1 ${a} events, tab2 sees ${p2ev}, saved ${saved}` };
+  return { pass: a > 2 && p2ev >= a && saved >= a, note: `tab1 ${a} events, tab2 sees ${p2ev}, saved ${saved}` };
 });
 await scenario('R-storage-blocked', 'storage blocked (private mode): a game still plays with no errors', async () => {
   const ctx = await browser.newContext({ ...PHONE });
