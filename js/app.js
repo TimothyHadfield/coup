@@ -94,6 +94,70 @@
   const backGhost = () => `<div class="tbl-card coup-back coup-ghost">${cardSVG(null)}</div>`;
   // small stable tilt so cards lying on the table are never perfectly square
   const tilt = (key, deg) => (TK ? TK.jitter(key, 0, { rot: deg, off: 0 }).r : 0);
+  // Opponents' seats fill the far side of the table: the biggest cards (true 63x88 shape) that fit the
+  // space left after the middle of the table, your cards and your reference card. With 3+ opponents they
+  // may sit in two rows like round a real table: the middle seats across the far side, the two outer seats
+  // nearer you at the edges. Worked out once per screen size and player count, so nothing resizes mid-game.
+  const seatFit = {};
+  function fitSeats(root) {
+    const game = root && root.querySelector('.game'), opps = root && root.querySelector('.opps');
+    if (!game || !opps || !game.offsetHeight) return;
+    const seats = [...opps.children], n = seats.length;
+    if (!n) return;
+    const desk = innerWidth >= 900, land = !desk && innerHeight <= 500 && innerWidth > innerHeight;
+    const key = innerWidth + 'x' + innerHeight + ':' + n;
+    let fit = seatFit[key];
+    if (fit === undefined) {
+      opps.classList.remove('fit', 'rows2'); opps.removeAttribute('style'); seats.forEach((s) => { s.style.gridArea = ''; });
+      const stage = game.querySelector('.stage'), card = seats[0].querySelector('.cardf'), top = seats[0].querySelector('.top'), mid = seats[0].querySelector('.mid');
+      if (!stage || !card || !top || !mid) return;
+      const cs = getComputedStyle(opps), sc = getComputedStyle(seats[0]);
+      const baseW = card.offsetWidth, baseH = card.offsetHeight;
+      const padB = parseFloat(cs.paddingBottom) || 0;          // laptop: room for the seats' arc
+      const vExtra = seats[0].offsetHeight - top.offsetHeight - baseH;   // gaps + padding round the cards
+      const hExtra = mid.scrollWidth - 2 * baseW + (parseFloat(sc.paddingLeft) || 0) + (parseFloat(sc.paddingRight) || 0);
+      const reserve = desk ? 160 : land ? 110 : 140;           // the middle of the table keeps room for any question
+      const slack = desk ? 0 : land ? 26 : 8;                  // the reference card grows when "bluff" labels wrap
+      const avail = opps.offsetHeight + stage.offsetHeight - reserve - slack;
+      const colGap = 8, rowGap = 4, cap = desk ? 84 : land ? 44 : 70;
+      const W = opps.clientWidth;
+      const best = { w: 0, rows: 1, cols: n };
+      for (const rows of n >= 3 ? [1, 2] : [1]) {
+        const cols = rows === 1 ? n : Math.max(n - 2, 2);
+        const seatW = (W - (cols - 1) * colGap) / cols;
+        const byW = (seatW - hExtra) / 2;
+        const rowH = (avail - (rows === 1 ? padB : 0) - (rows - 1) * rowGap) / rows;
+        const byH = (rowH - top.offsetHeight - vExtra) * 63 / 88;
+        const w = Math.floor(Math.min(byW, byH, cap));
+        if (w > best.w + 2) Object.assign(best, { w, rows, cols });
+      }
+      fit = best.w > baseW + 2 ? best : null;     // never smaller than before
+      seatFit[key] = fit;
+    }
+    if (!fit) return;
+    opps.classList.add('fit');
+    opps.style.setProperty('--ocw', fit.w + 'px');
+    if (fit.rows === 2) {
+      opps.classList.add('rows2');
+      opps.style.setProperty('--cols', fit.cols);
+      seats.forEach((s, k) => {
+        s.style.gridArea = k === 0 ? '2 / 1' : k === n - 1 ? `2 / ${fit.cols}` : n === 3 ? '1 / 1 / 2 / 3' : `1 / ${k}`;
+      });
+    }
+  }
+  // Small phones: when a question needs more room than the middle of the table has (e.g. three Block
+  // buttons with 6 players on an iPhone SE), the reference card (not usable during the question) gets
+  // compact instead of being pushed off the bottom of the screen.
+  function fitTight(root) {
+    const game = root && root.querySelector('.game');
+    if (!game || !game.offsetHeight) return;
+    game.classList.remove('tight');
+    if (innerWidth >= 900) return;
+    const st = game.querySelector('.stage');
+    if (game.scrollHeight > game.clientHeight + 1 || (st && st.scrollHeight > st.clientHeight + 1)) game.classList.add('tight');
+  }
+  let fitT = 0;
+  window.addEventListener('resize', () => { clearTimeout(fitT); fitT = setTimeout(() => { if (store.tab === 'play' && G) { const r = $('#tab-play'); fitSeats(r); fitTight(r); } }, 120); });
   // red (unlikely) -> green (likely)
   function scale(p) {
     const h = Math.round(Math.max(0, Math.min(1, p)) * 125);
@@ -557,14 +621,17 @@
 
     root.innerHTML = `<div class="felt tbl-surface tbl-wood-dark"><div class="playwrap"><div class="game">
       <div class="opps">${opps}</div>
-      <button class="log tlog" data-log="1" aria-label="Game log">${logHTML(s)}</button>
+      <button class="log tlog" data-log="1" aria-label="Game log">${myTurn && !G.over && hint && hint.why && pd.kind !== 'exchange' && pd.kind !== 'pick' ? `<div class="why">Hint: ${esc(hint.why)}</div>` : ''}${logHTML(s)}</button>
       <div class="stage"><div class="court"><div class="court-deck" aria-label="Court deck"></div></div><div class="prompt">${stage}</div>${treasuryHTML(s)}</div>
       <div class="me-row"><div class="cards">${myCards}</div>${coinPile(me.coins)}
         <div class="side">
           <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}<button class="btn small ghost" data-quit="1">${G.online ? 'Leave' : G.over ? 'Close' : 'Quit'}</button></div></div></div>
       <div class="actions refcard">${acts}</div>
     </div>${side}</div></div>`;
+    fitSeats(root);
     drawCourt(root);
+    fitTight(root);
+    requestAnimationFrame(() => fitTight(root));
     if (undealt.size) hideUndealt();
 
     // flip in newly revealed cards
@@ -572,6 +639,20 @@
     // clear bubbles when they expire
     const nextSay = Object.values(says).filter((x) => x.until > now).map((x) => x.until - now);
     if (nextSay.length) { clearTimeout(renderPlay._t); renderPlay._t = setTimeout(renderPlay, Math.min(...nextSay) + 30); }
+  }
+
+  // One opponent's seat up close: their two cards big (lost ones face up), coins, and the odds for them.
+  function openSeat(i) {
+    const s = G.s, pl = s.players[i];
+    if (!pl) return;
+    const reveal = G.over || S().peek;
+    const cards = pl.cards.map((cd) => cardEl(cd.dead || reveal ? cd.c : null, { size: 'lg', dead: cd.dead })).join('');
+    const post = S().showOdds && E.alive(pl) && !G.over ? posteriorNow() : null;
+    const chars = s.rules.chars;
+    const odds = post && post[i] ? `<table class="oddsT"><tr>${chars.map((c) => `<th><span class="chip" style="background:${COLORS[c]}"></span>${c.slice(0, 4)}</th>`).join('')}</tr>
+      <tr>${chars.map((c) => `<td style="color:${scale(post[i].has[c])}">${pctTxt(post[i].has[c])}</td>`).join('')}</tr></table>` : '';
+    sheet(`<h3><span class="seat-h">${esc(pl.name)} ${coinPile(pl.coins)}</span><button class="btn small ghost" data-s="x">Close</button></h3>
+      <div class="body"><div class="choose seat-cards">${cards}</div>${odds}</div>`, () => closeSheet());
   }
 
   function oddsTable(post) {
@@ -1130,6 +1211,8 @@
     }
     if (ds.review) { openReview(); return; }
     if (ds.log && G) { sheet(`<h3>Game log<button class="btn small ghost" data-s="x">Close</button></h3><div class="body"><div class="log full">${logHTML(G.s)}</div></div>`, () => closeSheet()); return; }
+    // ---- a tap on an opponent's seat (when not picking a target) shows their cards up close
+    if (ds.opp != null && G && !(selAction && G.s.pending && isHuman(G.s.pending.p) && G.s.pending.kind === 'action')) { openSeat(+ds.opp); return; }
     // ---- play decisions
     if (G && G.s.pending && isHuman(G.s.pending.p)) {
       const pd = G.s.pending;
