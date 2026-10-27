@@ -1,4 +1,13 @@
-# shared byte-for-byte copies of _fx/_table: never convert line endings
+# shared byte-for-byte copies of _fx/_table/_coach/_profile/_pwa: never convert line endings
 js/tablekit.js -text
 css/table.css -text
 js/online.js -text
+js/fx.js -text
+js/coach.js -text
+css/coach.css -text
+js/profile.js -text
+css/profile.css -text
+js/pwa.js -text
+sw.js -text
+tools/make-icons.mjs -text
+tools/pwa-check.mjs -text

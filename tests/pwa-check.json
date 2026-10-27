@@ -1,0 +1,10 @@
+{
+  "repo": "coup",
+  "ready": "!!(window.__coup && document.querySelector('#tab-play [data-new], #tab-play .stage'))",
+  "play": [
+    "(async () => { const w = ms => new Promise(r => setTimeout(r, ms)); const q = s => document.querySelector(s); q('#tab-play [data-new]').click(); for (let i = 0; i < 400; i++) { await w(100); const G = window.__coup.G; const pd = G && G.s.pending; if (!pd || pd.p !== 0) continue; if (pd.kind === 'action') { const b = q('#tab-play [data-act=income]:not([disabled])'); if (b) { b.click(); return; } continue; } const a = q('#tab-play [data-ch=\"0\"]') || q('#tab-play [data-blk=\"\"]') || q('#tab-play .stage button'); if (a) a.click(); } })()"
+  ],
+  "played": "(() => { const G = window.__coup.G; return !!G && !G.over && G.moved && G.s.pending && G.s.pending.p === 0 && G.s.events.some((e) => e.t === 'action' && e.p !== 0 && G.s.events.indexOf(e) > G.s.events.findIndex((x) => x.t === 'action' && x.p === 0)); })()",
+  "safe": "(() => { const q = document.querySelector('#tab-play [data-quit]'); if (q) { q.click(); const y = document.querySelector('#overlay [data-s=yes]'); if (y) y.click(); } })()",
+  "debug": "JSON.stringify(window.__coup.G && { t: window.__coup.G.s.turnNo, p: window.__coup.G.s.pending, moved: window.__coup.G.moved })"
+}
