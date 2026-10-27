@@ -148,6 +148,7 @@
     const poolCode = code(pool);
     const out = view.players.map(() => null);
     for (const target of opp) {
+      if (opts.only && !opts.only.includes(target)) continue;   // the caller needs just these players
       const others = opp.filter((i) => i !== target);
       const memo = new Float64Array(Math.max(1, others.length) * SIZE).fill(-1);
       // G(j, pool): weighted count of ways to fill others[j..] from pool

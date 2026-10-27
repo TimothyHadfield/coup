@@ -141,24 +141,39 @@
  "strength": {
   "games": {
    "duel": 1000,
-   "three": 900
+   "three": 900,
+   "four": 300,
+   "six": 150
   },
   "hardVsEasy": {
-   "hard": 83.1,
-   "easy": 16.9
+   "hard": 77.2,
+   "easy": 22.8
   },
   "hardVsMedium": {
-   "hard": 46.6,
-   "medium": 53.4
+   "hard": 75.1,
+   "medium": 24.9
   },
   "mediumVsEasy": {
    "medium": 74.4,
    "easy": 25.6
   },
   "threeWay": {
-   "easy": 11.4,
-   "medium": 33.3,
-   "hard": 55.2
+   "easy": 16.8,
+   "medium": 24.3,
+   "hard": 58.9
+  },
+  "hardVs3Medium": {
+   "hard": 64,
+   "medium": 36
+  },
+  "hardVs5Medium": {
+   "hard": 46.7,
+   "medium": 53.3
+  },
+  "mediumVs3Easy": {
+   "medium": 43,
+   "easy": 57
   }
- }
+ },
+ "strengthMade": "2026-10-27"
 }

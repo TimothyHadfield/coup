@@ -21,6 +21,39 @@
     // bluff rate mid-game measured worse, so it is off.
     hard:   { noise: 0.25, bluff: 0.5, odds: 'full', learn: false, caution: 3.0, risk: 0.2, blockBluff: 1.0,  smart: true },
   };
+  // Hard's look-ahead plays thousands of quick games in its head; those use Medium's habits with a
+  // cheaper odds sum (card counting + each player's claims since their hand last changed).
+  PARAMS.quick = Object.assign({}, PARAMS.medium, { odds: 'quick' });
+  function quickPost(view, chars) {
+    const CH = chars || (view.rules && view.rules.chars) || ['Duke', 'Assassin', 'Captain', 'Ambassador', 'Contessa'];
+    const per = (view.rules && view.rules.perChar) || 3;
+    const u = {};
+    CH.forEach((c) => (u[c] = per));
+    view.myCards.forEach((cd) => { if (!cd.dead && u[cd.c] > 0) u[cd.c]--; });
+    view.players.forEach((pl) => pl.dead.forEach((c) => { if (u[c] > 0) u[c]--; }));
+    (view.knownDeck || []).forEach((c) => { if (u[c] > 0) u[c]--; });
+    const U = CH.reduce((a, c) => a + u[c], 0);
+    const n = view.players.length;
+    const claims = Array.from({ length: n }, () => ({})), caught = Array.from({ length: n }, () => ({}));
+    for (const e of view.events) {
+      if (e.t === 'action' && e.claim) claims[e.p][e.claim] = 1;
+      else if (e.t === 'block') claims[e.p][e.char] = 1;
+      else if (e.t === 'challenge') { delete claims[e.of][e.char]; if (!e.truth) caught[e.of][e.char] = 1; }
+      else if (e.t === 'exchange' || e.t === 'forced') { claims[e.p] = {}; caught[e.p] = {}; }
+      else if (e.t === 'lose') delete claims[e.p][e.char];
+    }
+    return view.players.map((pl, i) => {
+      if (i === view.me || !pl.hidden) return null;
+      const has = {};
+      for (const c of CH) {
+        let p = U > 0 ? 1 - Odds.binom(U - u[c], pl.hidden) / Math.max(1, Odds.binom(U, pl.hidden)) : 0;
+        if (caught[i][c]) p = 0;
+        else if (claims[i][c] && u[c] > 0) p = p / (p + (1 - p) * 0.3);
+        has[c] = p;
+      }
+      return { has };
+    });
+  }
   const VAL = { Duke: 5, Captain: 4, Assassin: 4.2, Contessa: 3.4, Ambassador: 2.6, Inquisitor: 3 };
   const NAME = { income: 'Income', foreign_aid: 'Foreign aid', tax: 'Tax', steal: 'Steal', assassinate: 'Assassinate', exchange: 'Exchange', coup: 'Coup', examine: 'Examine' };
 
@@ -35,12 +68,26 @@
     const post = () => {
       if (_post) return _post;
       if (P.odds === 'none') return (_post = null);
+      if (P.odds === 'quick') return (_post = quickPost(view, chars));
       const bluffBy = P.learn ? Odds.learnBluff(view.events, view.players.length, 0.2) : undefined;
       _post = Odds.posterior(view, { useEvidence: P.odds === 'full', bluff: 0.3, bluffBy, chars, stealBlockers });
       return _post;
     };
     // P(player i holds char), with a sensible fallback for Easy
+    // one player's odds only (much cheaper at a big table than everyone's)
+    const one = {};
+    const postOne = (i) => {
+      if (_post) return _post[i];
+      if (P.odds !== 'full') { const pp = post(); return pp && pp[i]; }
+      if (one[i] === undefined) {
+        const bluffBy = P.learn ? Odds.learnBluff(view.events, view.players.length, 0.2) : undefined;
+        one[i] = Odds.posterior(view, { useEvidence: true, bluff: 0.3, bluffBy, chars, stealBlockers, only: [i] })[i];
+      }
+      return one[i];
+    };
     const has = (i, c) => {
+      const pi = postOne(i);
+      if (pi) return pi.has[c];
       const pp = post();
       if (pp && pp[i]) return pp[i].has[c];
       const unseen = Odds.unseenCopies(view, c);
@@ -85,7 +132,7 @@
   }
 
   // ------------------------------------------------------------- actions
-  function chooseAction(view, legal, level, rnd, rules) {
+  function chooseAction(view, legal, level, rnd, rules, withCands) {
     const x = ctxOf(view, level, rnd, rules);
     const P = x.P;
     const coins = x.coins;
@@ -94,9 +141,11 @@
 
     if (legal.every((l) => l.action === 'coup')) {
       const t = P.smart ? bestBy(targets('coup'), (i) => threat(x, i)) : targets('coup')[Math.floor(rnd() * targets('coup').length)];
-      return { d: { action: 'coup', target: t }, why: 'You have 10+ coins, so you must Coup.' };
+      const r = { d: { action: 'coup', target: t }, why: 'You have 10+ coins, so you must Coup.' };
+      if (withCands) r.cands = targets('coup').map((i) => ({ action: 'coup', target: i, s: threat(x, i), why: `Coup ${view.players[i].name}: you have 10+ coins, so you must Coup.` }));
+      return r;
     }
-    if (coins >= 7 && (level !== 'easy' || rnd() < 0.7)) {
+    if (coins >= 7 && !withCands && (level !== 'easy' || rnd() < 0.7)) {
       const ts = targets('coup');
       const t = P.smart ? bestBy(ts, (i) => threat(x, i)) : ts[Math.floor(rnd() * ts.length)];
       return { d: { action: 'coup', target: t }, why: `Coup ${view.players[t].name}: it can't be blocked or challenged.` };
@@ -141,16 +190,22 @@
       for (const t of targets('examine')) add('examine', t, 0.8, 'Inquisitor', 'Examine to learn a card.');
     }
 
+    if (withCands && coins >= 7) for (const t of targets('coup')) add('coup', t, 6 + threat(x, t) * 0.1, null, `Coup ${view.players[t].name}: it can't be blocked or challenged.`);
     let best = null;
+    const scored = [];
     for (const c of cands) {
       const cost = claimCost(c.claim);
       if (cost >= 99) continue;
       if (level === 'easy' && c.claim && !x.mine.includes(c.claim) && rnd() > P.bluff) continue;
       const s = c.score - cost + (rnd() - 0.5) * P.noise;
-      if (!best || s > best.s) best = Object.assign({ s, cost }, c);
+      const o = Object.assign({ s, cost }, c);
+      scored.push(o);
+      if (!best || s > best.s) best = o;
     }
     const bluffNote = best.claim && !x.mine.includes(best.claim) ? ` (a bluff: about ${Math.round(challengeRisk(x, best.claim) * 100)}% you get challenged)` : '';
-    return { d: { action: best.action, target: best.target }, why: best.why + bluffNote };
+    const r = { d: { action: best.action, target: best.target }, why: best.why + bluffNote };
+    if (withCands) r.cands = scored;
+    return r;
   }
 
   // ----------------------------------------------------------- challenges
@@ -290,10 +345,168 @@
     return { d: { keep: best }, why: 'Keep: ' + best.map((i) => opts[i]).join(' + ') + '.' };
   }
 
+  // ------------------------------------------------------- Hard: look ahead
+  // Hard plays each choice out many times before it commits. Each time it deals the cards it can't see
+  // at random, weighted by the same odds model (what everyone has claimed, blocked or been caught
+  // bluffing), then plays the game to the end with every player (itself too) using Medium's habits.
+  // The choice that wins most often is played. It still sees only its own view.
+  const Eng = root.CoupEngine || (typeof require !== 'undefined' ? require('./engine.js') : null);
+  const SEARCH = { worlds: 8, maxCands: 5, depth: 4, rollout: 'medium', prior: 0, budgetMs: 600 };
+  function sampleHands(view, rnd, rules, postIn) {
+    const CH = (rules && rules.chars) || (view.rules && view.rules.chars) || ['Duke', 'Assassin', 'Captain', 'Ambassador', 'Contessa'];
+    const per = (rules && rules.perChar) || 3;
+    const pool = {};
+    CH.forEach((c) => (pool[c] = per));
+    const take = (c) => { if (pool[c] > 0) pool[c]--; };
+    view.myCards.forEach((cd) => { if (!cd.dead) take(cd.c); });
+    view.players.forEach((pl) => pl.dead.forEach(take));
+    (view.knownDeck || []).forEach(take);
+    const pool0 = Object.assign({}, pool);
+    const post = postIn || Odds.posterior(view, { bluff: 0.3, chars: CH, stealBlockers: rules && rules.stealBlockers, perChar: per });
+    const opp = view.players.map((p, i) => i).filter((i) => i !== view.me && view.players[i].hidden > 0);
+    for (let k = opp.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); const t = opp[k]; opp[k] = opp[j]; opp[j] = t; }
+    const hands = {};
+    for (const i of opp) {
+      const dist = post[i] && post[i].hand ? post[i].hand : null;
+      let pick = null;
+      if (dist) {
+        // weight each possible hand by its odds and by how many ways the cards still left can make it
+        const ws = dist.map((d) => {
+          let w = d.p;
+          d.counts.forEach((x, t) => { if (x) { const b = Odds.binom(pool0[CH[t]], x); w = b ? w * Odds.binom(pool[CH[t]], x) / b : 0; } });
+          return w;
+        });
+        const Z = ws.reduce((a, b) => a + b, 0);
+        if (Z > 0) {
+          let r = rnd() * Z, k = 0;
+          while (k < ws.length - 1 && (r -= ws[k]) > 0) k++;
+          pick = [];
+          dist[k].counts.forEach((x, t) => { for (let m = 0; m < x; m++) pick.push(CH[t]); });
+        }
+      }
+      if (!pick) {
+        // fall back to plain card counting
+        pick = [];
+        for (let m = 0; m < view.players[i].hidden; m++) {
+          const bag = []; CH.forEach((c) => { for (let q = 0; q < pool[c]; q++) bag.push(c); });
+          if (!bag.length) break;
+          const c = bag[Math.floor(rnd() * bag.length)]; pool[c]--; pick.push(c);
+        }
+        hands[i] = pick; continue;
+      }
+      pick.forEach((c) => pool[c]--);
+      hands[i] = pick;
+    }
+    const rest = [];
+    CH.forEach((c) => { for (let q = 0; q < pool[c]; q++) rest.push(c); });
+    return { hands, rest };
+  }
+  // A full game state that matches what `view` shows, with the hidden cards dealt by sampleHands.
+  function worldFrom(view, rnd, rules, post) {
+    const { hands, rest } = sampleHands(view, rnd, rules, post);
+    for (let k = rest.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); const t = rest[k]; rest[k] = rest[j]; rest[j] = t; }
+    const known = (view.knownDeck || []).slice();
+    const deckN = Math.max(0, view.deckSize - known.length);
+    const deck = rest.slice(0, deckN).concat(known);
+    for (let k = deck.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); const t = deck[k]; deck[k] = deck[j]; deck[j] = t; }
+    const out = rest.slice(deckN);
+    const lastTurn = view.events.length ? view.events[view.events.length - 1].turnNo || 0 : 0;
+    const s = {
+      n: view.players.length, rs: (rnd() * 4294967296) >>> 0 || 1, turn: view.turn, turnNo: lastTurn, rules: view.rules || Eng.ruleSet(rules),
+      players: view.players.map((pl, i) => {
+        const dead = pl.dead.map((c) => ({ c, dead: true }));
+        const live = i === view.me ? view.myCards.filter((c) => !c.dead).map((c) => ({ c: c.c, dead: false })) : (hands[i] || []).map((c) => ({ c, dead: false }));
+        return { name: pl.name, coins: pl.coins, cards: i === view.me ? view.myCards.map((c) => ({ c: c.c, dead: c.dead })) : live.concat(dead), knownDeck: i === view.me ? known.slice() : [], knownOut: [], peeks: i === view.me ? (view.peeks || []).slice() : [] };
+      }),
+      deck, out, events: view.events.slice(), loseQueue: [], ctx: null, pending: null, winner: -1,
+    };
+    return s;
+  }
+  function cloneWorld(s) {
+    return {
+      n: s.n, rs: s.rs, turn: s.turn, turnNo: s.turnNo, rules: s.rules,
+      players: s.players.map((pl) => ({ name: pl.name, coins: pl.coins, cards: pl.cards.map((c) => ({ c: c.c, dead: c.dead })), knownDeck: pl.knownDeck.slice(), knownOut: [], peeks: pl.peeks.slice() })),
+      deck: s.deck.slice(), out: s.out.slice(), events: s.events.slice(), loseQueue: [], ctx: null, pending: null, winner: -1,
+    };
+  }
+  // A cut-off game: each player's chance from cards in hand and coins (a card is worth about 7 coins).
+  function guessShare(s, me) {
+    let tot = 0, mine = 0;
+    s.players.forEach((pl, i) => {
+      const h = pl.cards.filter((c) => !c.dead).length;
+      if (!h) return;
+      const v = Math.pow(h * 7 + Math.min(pl.coins, 9), 2);
+      tot += v; if (i === me) mine = v;
+    });
+    return tot ? mine / tot : 0;
+  }
+  // Play to the end with Medium's habits for everyone; 1 if `me` wins (a share if the game runs long).
+  function rollout(s, me, rnd) {
+    let steps = 0;
+    const stop = SEARCH.depth ? s.turnNo + SEARCH.depth : Infinity;
+    while (s.pending && steps++ < 400) {
+      if (s.turnNo > stop && s.pending.kind === 'action') return guessShare(s, me);
+      const pd = s.pending;
+      const v = Eng.viewFor(s, pd.p);
+      const r = decide(v, pd, SEARCH.rollout, rnd, pd.kind === 'action' ? Eng.legalActions(s, pd.p) : null, s.rules);
+      Eng.act(s, r.d);
+    }
+    if (s.winner === me) return 1;
+    if (s.winner >= 0) return 0;
+    const alive = s.players.filter((p) => p.cards.some((c) => !c.dead)).length;
+    return s.players[me].cards.some((c) => !c.dead) ? 1 / alive : 0;
+  }
+  // Pick the best of `cands` (decisions for my pending action) by playing each out in the same sampled worlds.
+  function searchAction(view, legal, rnd, rules, cands) {
+    const me = view.me;
+    const tot = cands.map(() => 0);
+    const CH = (rules && rules.chars) || (view.rules && view.rules.chars);
+    const post = Odds.posterior(view, { bluff: 0.3, chars: CH, stealBlockers: rules && rules.stealBlockers, perChar: (rules && rules.perChar) || 3 });
+    const t0 = Date.now();
+    let W = 0;
+    for (let w = 0; w < SEARCH.worlds; w++) {
+      if (w >= 3 && Date.now() - t0 > SEARCH.budgetMs) break;   // a slow phone: stop early rather than freeze the page
+      W++;
+      const base = worldFrom(view, rnd, rules, post);
+      const seed = (rnd() * 4294967296) >>> 0;
+      cands.forEach((d, k) => {
+        const s = cloneWorld(base);
+        s.rs = base.rs;
+        s.ctx = { actor: me, action: null, target: -1, stage: 'declare', order: [], oi: 0, blocker: -1, blockChar: null, failed: false };
+        s.pending = { kind: 'action', p: me, mustCoup: s.players[me].coins >= 10 };
+        let a = seed;
+        const r2 = () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+        try { Eng.act(s, d); tot[k] += rollout(s, me, r2); } catch (e) { tot[k] -= 99; }
+      });
+    }
+    const avg = tot.map((v, k) => v / W + (k === 0 ? SEARCH.prior : 0));   // cands[0] is the rule-of-thumb pick
+    let bi = 0;
+    avg.forEach((v, k) => { if (v > avg[bi]) bi = k; });
+    return { k: bi, win: Math.min(1, tot[bi] / W), all: avg };
+  }
+  function hardAction(view, legal, rnd, rules) {
+    const base = chooseAction(view, legal, 'hard', rnd, rules, true);
+    if (!Eng || !base.cands || legal.length <= 1) return base;
+    // the heuristic's best few choices (always including the safe Income and its own pick)
+    const ranked = base.cands.slice().sort((a, b) => b.s - a.s);
+    const pickSet = [];
+    const keyOf = (c) => c.action + ':' + c.target;
+    for (const c of ranked) { if (pickSet.length >= SEARCH.maxCands) break; if (!pickSet.some((p) => keyOf(p) === keyOf(c))) pickSet.push(c); }
+    for (const l of legal) if (l.action === 'coup' && !pickSet.some((p) => keyOf(p) === keyOf(l))) { const t = ranked.find((c) => c.action === 'coup' && c.target === l.target); pickSet.push(t || Object.assign({ why: `Coup ${view.players[l.target].name}: it can't be blocked or challenged.` }, l)); }
+    if (!pickSet.some((p) => p.action === 'income')) { const inc = ranked.find((c) => c.action === 'income'); if (inc) pickSet.push(inc); }
+    if (pickSet.length <= 1) return base;
+    const r = searchAction(view, legal, rnd, rules, pickSet.map((c) => ({ action: c.action, target: c.target })));
+    const best = pickSet[r.k];
+    const mine = view.myCards.filter((c) => !c.dead).map((c) => c.c);
+    const bluff = best.claim && !mine.includes(best.claim);
+    const why = (best.why || NAME[best.action]) + (bluff ? ' (a bluff)' : '') + ` Played out, it wins about ${Math.round(r.win * 100)}% of the time.`;
+    return { d: { action: best.action, target: best.target }, why };
+  }
+
   function decide(view, pend, level, rnd, legal, rules) {
     rnd = rnd || Math.random;
     switch (pend.kind) {
-      case 'action': return chooseAction(view, legal, level, rnd, rules);
+      case 'action': return level === 'hard' && SEARCH.worlds > 0 ? hardAction(view, legal, rnd, rules) : chooseAction(view, legal, level, rnd, rules);
       case 'challenge': return chooseChallenge(view, pend, level, rnd, rules);
       case 'block': return chooseBlock(view, pend, level, rnd, rules);
       case 'lose': return chooseLose(view, pend, level, rnd, rules);
@@ -322,7 +535,7 @@
     }
   }
 
-  const api = { decide, PARAMS, VAL, NAME, chooseAction, chooseChallenge, chooseBlock, chooseLose, chooseExchange };
+  const api = { decide, SEARCH, PARAMS, VAL, NAME, chooseAction, chooseChallenge, chooseBlock, chooseLose, chooseExchange };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CoupAI = api;
 })(typeof self !== 'undefined' ? self : this);

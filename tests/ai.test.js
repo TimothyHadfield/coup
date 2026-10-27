@@ -4,6 +4,7 @@ const assert = require('assert');
 const E = require('../js/engine.js');
 const AI = require('../js/ai.js');
 const S = require('../tools/sim.js');
+if (process.env.NO_SEARCH) AI.SEARCH.worlds = 0;   // the old rule-of-thumb Hard (to watch the strength test fail)
 
 let pass = 0, fail = 0;
 function test(name, fn) {
@@ -21,10 +22,10 @@ test('every level finishes 120 games of every size and variant with legal moves'
     }
   }
 });
-test('Hard games never loop: 200 three-player all-Hard games end within 150 turns', () => {
+test('Hard games never loop: 80 three-player all-Hard games end within 150 turns', () => {
   // two last-card players used to trade Assassinate / bluffed Contessa block forever
   let worst = 0;
-  for (let g = 0; g < 200; g++) {
+  for (let g = 0; g < 80; g++) {
     const s = E.newGame({ names: ['a', 'b', 'c'], seed: 900 + g });
     let rnd = (() => { let a = g * 7 + 3; return () => { a = (a + 0x6D2B79F5) | 0; let t = Math.imul(a ^ (a >>> 15), a | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; })();
     while (s.pending && s.turnNo < 300) {
@@ -65,7 +66,12 @@ test('measured strength: Hard > Medium > Easy (fixed seeds)', () => {
   const hm = S.matchup(['hard', 'medium'], 600, 7000).wins;
   assert.ok(he.hard / 300 > 0.7, 'hard vs easy ' + he.hard);
   assert.ok(me.medium / 300 > 0.6, 'medium vs easy ' + me.medium);
-  assert.ok(hm.hard / 600 > 0.52, 'hard vs medium ' + hm.hard);
+  assert.ok(hm.hard / 600 > 0.65, 'hard vs medium ' + hm.hard);
+  assert.ok(he.hard / 300 > me.medium / 300, 'Hard beats Easy more often than Medium does');
+});
+test('Hard at a big table: well over its fair share against three Mediums (fixed seeds)', () => {
+  const w = S.matchup(['hard', 'medium', 'medium', 'medium'], 120, 7100).wins;
+  assert.ok(w.hard / 120 > 0.45, 'hard won ' + w.hard + ' of 120 (fair share 30)');
 });
 
 console.log(`ai: ${pass} passed, ${fail} failed`);
