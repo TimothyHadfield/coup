@@ -13,6 +13,10 @@ const out = process.argv[3] || '.';
 const only = process.argv.slice(4);
 fs.mkdirSync(out, { recursive: true });
 const browser = await webkit.launch();
+// these scenarios are for a returning player: the first-visit "New to Coup?" offer (ui.improve covers it) stays away,
+// and the offline copy (sw.js, covered by tools/pwa-check.mjs) is off so page.route can cut the connection
+const newContext0 = browser.newContext.bind(browser);
+browser.newContext = async (o) => { const c = await newContext0({ serviceWorkers: 'block', ...o }); await c.addInitScript(() => { try { localStorage.setItem('coach-offer:coup-first', '1'); } catch (e) { /* storage blocked */ } }); return c; };
 const results = [];
 const PHONE = { ...devices['iPhone 15'] };
 const SIZES = {

@@ -201,6 +201,8 @@
   // Back: close an open sheet first, skip a stale sheet entry, otherwise go to the previous tab
   window.addEventListener('popstate', (e) => {
     const st = e.state || {};
+    if (COACH && COACH.rulesOpen()) { COACH.closeRules(); return; }
+    if (Profile && Profile.isOpen()) { Profile.closePanel(); return; }
     if ($('#overlay').innerHTML) { closeSheet(); return; }
     if (st.sheet) { history.back(); return; }
     setTab(st.tab || 'play', true);
@@ -233,16 +235,99 @@
   let selAction = null;
   let shownDead = new Set();
   let strength = null; // data/stats.json once loaded
+  let undoStack = [];  // your earlier positions this game (JSON), newest last; kept in memory only
 
-  function newGame() {
+  // ------------------------------------------------------------------ My stats (shared _profile kit)
+  // Everything stays on this device. Games vs the computer are rated unless you used Hint or Undo;
+  // the guided first game never counts; quitting after your first move counts as a loss.
+  const Profile = window.Profile && window.Profile.init ? window.Profile : null;
+  const COACH = window.COACH && window.COACH.tour ? window.COACH : null;
+  const DAILY = { players: 4, level: 'hard' };                       // today's deal vs 3 Hard computers
+  const TUTORIAL = { players: 3, level: 'easy', seed: 6 };            // seed 6: you hold Duke + Captain and start
+  // Elo of each level from measured one-on-one games (tools/ladder.js, data/stats.json):
+  // Medium beats Easy 74% (+185), Hard beats Medium 75% (+192), 1000 games each. Easy sits at 1200, where everyone starts.
+  const PF_LEVELS = [{ id: 'easy', name: 'Easy', rating: 1200 }, { id: 'medium', name: 'Medium', rating: 1385 }, { id: 'hard', name: 'Hard', rating: 1577 }];
+  const won = (c) => !!(c.last && c.last.won);
+  const ex = (c) => (c.last && c.last.extra) || {};
+  const ACHIEVEMENTS = [
+    { id: 'first', title: 'First win', desc: 'Win a game', test: (c) => c.stats.wins >= 1 },
+    { id: 'medium', title: 'Steady hand', desc: 'Beat Medium computers', test: (c) => won(c) && (c.last.level === 'medium' || c.last.level === 'hard') },
+    { id: 'hard', title: 'Power broker', desc: 'Beat Hard computers', test: (c) => won(c) && c.last.level === 'hard' },
+    { id: 'full', title: 'Full court', desc: 'Beat 5 Hard computers', test: (c) => won(c) && c.last.level === 'hard' && ex(c).players >= 6 },
+    { id: 'honest', title: 'Honest to the end', desc: 'Win without a single bluff', test: (c) => won(c) && ex(c).claims > 0 && ex(c).bluffs === 0 },
+    { id: 'liar', title: 'Poker face', desc: 'Win after 3 bluffs nobody caught', test: (c) => won(c) && ex(c).bluffsOk >= 3 },
+    { id: 'catcher', title: 'Bluff catcher', desc: 'Catch 3 bluffs in one game', test: (c) => ex(c).caught >= 3 },
+    { id: 'onecard', title: 'Hanging by a thread', desc: 'Win with one card left', test: (c) => won(c) && ex(c).cardsLeft === 1 },
+    { id: 'streak', title: 'Hat trick', desc: 'Win 3 in a row', test: (c) => c.stats.bestStreak >= 3 },
+    { id: 'daily', title: 'Regular', desc: '3-day Daily streak', test: (c) => c.daily.streak >= 3 },
+  ];
+  // what you did this game, for the achievements
+  function gameExtra(s) {
+    let claims = 0, bluffs = 0, bluffsOk = 0, caught = 0;
+    s.events.forEach((e, ei) => {
+      if (((e.t === 'action' && e.claim) || e.t === 'block') && e.p === ME) {
+        claims++;
+        if (e._true === false) {
+          bluffs++;
+          const nextTurn = s.events.findIndex((x, k) => k > ei && x.t === 'turn');
+          const ch = s.events.slice(ei + 1, nextTurn < 0 ? undefined : nextTurn).find((x) => x.t === 'challenge' && x.of === ME);
+          if (!ch) bluffsOk++;
+        }
+      }
+      if (e.t === 'challenge' && e.by === ME && !e.truth) caught++;
+    });
+    const cardsLeft = s.players[ME].cards.filter((c) => !c.dead).length;
+    return { players: s.players.length, claims, bluffs, bluffsOk, caught, cardsLeft, oddsOff: !S().showOdds };
+  }
+  function recordProfile(iWon) {
+    if (!Profile || !G || G.online || G.tutorial || G.recorded) return;
+    G.recorded = true; save();
+    const r = G.helped ? { mode: 'help', level: null, won: !!iWon } : { mode: 'computer', level: G.level, won: !!iWon };
+    r.extra = gameExtra(G.s);
+    if (G.daily) { r.daily = true; r.date = G.daily; }
+    try { Profile.recordResult(r); } catch (e) { /* stats never break the game */ }
+  }
+  // Quitting (or dealing again) after your first move counts as a loss.
+  function recordQuit() {
+    if (!G || G.online || G.over || G.counted || !G.moved) return;
+    recordProfile(false);
+  }
+  function undo() {
+    if (!G || G.online || G.daily || G.over || !undoStack.length) return;
+    const o = JSON.parse(undoStack.pop());
+    GEN++;
+    G.s = o.s; G.calls = G.calls.slice(0, o.calls); G.helped = true;
+    hint = null; selAction = null;
+    for (const k in says) delete says[k];
+    shownDead = new Set();
+    G.s.players.forEach((pl, i) => pl.cards.forEach((cd, k) => { if (cd.dead) shownDead.add(i + ':' + k + ':' + cd.c); }));
+    closeSheet();
+    save(); renderPlay();
+    sfx('slide');
+    toast('Took back your last move. This game is unrated now.');
+    run(GEN);
+  }
+
+  // how: { daily: 'YYYY-MM-DD' } today's Daily game (same deal for everyone, 3 Hard computers, base rules)
+  //      { tutorial: true }     the guided first game (2 Easy computers, a fixed deal, you start)
+  function newGame(how) {
+    how = how || {};
+    if (COACH) COACH.closeOffer();      // a deal answers "New to Coup?" with no
+    if (G && !G.online) recordQuit();   // leaving a game you had played in counts as a loss
     GEN++;
     const st = S();
-    const n = 1 + Math.max(1, Math.min(5, st.opps));
+    let n = 1 + Math.max(1, Math.min(5, st.opps));
+    let rules = { inquisitor: st.inquisitor, twoPlayerDeal: st.twoDeal && n === 2 };
+    let first = store.lastWinner != null && store.lastWinner < n ? store.lastWinner : -1;   // last game's winner starts
+    let seed = (Math.random() * 2 ** 31) >>> 0, level = st.level;
+    if (how.daily) { n = DAILY.players; rules = {}; first = -1; level = DAILY.level; seed = Profile ? Profile.daily.seed(how.daily, 'coup') : seed; }
+    if (how.tutorial) { n = TUTORIAL.players; rules = {}; first = 0; level = TUTORIAL.level; seed = TUTORIAL.seed; }
     const names = ['You'].concat(BOT_NAMES.slice(0, n - 1));
-    const rules = { inquisitor: st.inquisitor, twoPlayerDeal: st.twoDeal && n === 2 };
-    const first = store.lastWinner != null && store.lastWinner < n ? store.lastWinner : -1;   // last game's winner starts
-    const s = E.newGame({ names, seed: (Math.random() * 2 ** 31) >>> 0, rules, first });
-    G = { s, level: st.level, calls: [], over: false, counted: false };
+    const s = E.newGame({ names, seed, rules, first });
+    G = { s, level, calls: [], over: false, counted: false, id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6) };
+    if (how.daily) G.daily = how.daily;
+    if (how.tutorial) G.tutorial = true;
+    undoStack = [];
     store.game = G;
     shownDead = new Set();
     hint = null; selAction = null;
@@ -253,7 +338,9 @@
     run(GEN);
   }
   function quitGame() {
+    recordQuit();
     GEN++;
+    undoStack = [];
     G = null; store.game = null; save();
     closeSheet();
     renderPlay();
@@ -468,7 +555,11 @@
     }
     selAction = null;
     if (G.online) { netAct(d); return; }
+    const before = !G.daily ? JSON.stringify({ s: G.s, calls: G.calls.length - (pd.kind === 'challenge' ? 1 : 0), helped: !!G.helped }) : null;
     try { step(d); } catch (e) { fxError(); toast('That move is not allowed.'); return; }
+    if (before) { undoStack.push(before); if (undoStack.length > 30) undoStack.shift(); }
+    G.moved = true;
+    if (window.COACH) COACH.emit('moved');
     renderPlay();
     run(GEN);
   }
@@ -477,9 +568,12 @@
       G.over = true;
       if (!G.counted) {
         G.counted = true;
-        const st = store.stats[G.level] || (store.stats[G.level] = { g: 0, w: 0 });
-        st.g++; if (G.s.winner === ME) st.w++;
+        if (!G.tutorial) {
+          const st = store.stats[G.level] || (store.stats[G.level] = { g: 0, w: 0 });
+          st.g++; if (G.s.winner === ME) st.w++;
+        }
         store.lastWinner = G.s.winner;
+        recordProfile(G.s.winner === ME);
       }
       save();
     }
@@ -625,12 +719,13 @@
       <div class="stage"><div class="court"><div class="court-deck" aria-label="Court deck"></div></div><div class="prompt">${stage}</div>${treasuryHTML(s)}</div>
       <div class="me-row"><div class="cards">${myCards}</div>${coinPile(me.coins)}
         <div class="side">
-          <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}<button class="btn small ghost" data-quit="1">${G.online ? 'Leave' : G.over ? 'Close' : 'Quit'}</button></div></div></div>
+          <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}${!G.online && !G.daily && !G.over && undoStack.length ? '<button class="btn small" data-undo="1" aria-label="Undo your last move">Undo</button>' : ''}<button class="btn small ghost" data-quit="1">${G.online ? 'Leave' : G.over ? 'Close' : 'Quit'}</button></div></div></div>
       <div class="actions refcard">${acts}</div>
     </div>${side}</div></div>`;
     fitSeats(root);
     drawCourt(root);
     fitTight(root);
+    if (COACH) COACH.update();
     requestAnimationFrame(() => fitTight(root));
     if (undealt.size) hideUndealt();
 
@@ -749,6 +844,7 @@
     if (!pd || !isHuman(pd.p)) return;
     const r = AI.decide(myView(), pd, 'hard', Math.random, pd.kind === 'action' ? E.legalActions(s, ME) : null, s.rules);
     hint = { d: r.d, why: r.why || 'No strong preference here.' };
+    if (!G.online && !G.tutorial && !G.helped) { G.helped = true; save(); }
     if (pd.kind === 'action' && r.d.target >= 0) hint.why += ` Target: ${s.players[r.d.target].name}.`;
     if ((pd.kind === 'lose' || pd.kind === 'show') && r.d.card != null) hint.why = r.why;
   }
@@ -939,6 +1035,25 @@
     });
   }
 
+  function meLabel() {
+    let st = null; try { st = Profile.stats(); } catch (e) { /* storage blocked */ }
+    return Profile.avatarSVG(Profile.avatar, 24) + '<span>My stats</span>' + (st ? `<small class="wl">Won ${st.wins} · Lost ${st.losses}</small>` : '');
+  }
+  function dailyLabel() {
+    let done = false; try { done = Profile.daily.played(Profile.daily.date()); } catch (e) { /* storage blocked */ }
+    return '<span>Daily game</span>' + `<small class="wl">${done ? 'Played today' : 'vs 3 Hard computers'}</small>`;
+  }
+  function startDaily() {
+    if (!Profile) return;
+    const day = Profile.daily.date();
+    if (G && G.online) { Profile.closePanel(); toast('Leave the online room first.'); return; }
+    if (G && G.daily === day && !G.over) { Profile.closePanel(); setTab('play'); return; }
+    if (Profile.daily.played(day)) { Profile.openPanel({ tab: 'daily' }); return; }
+    if (G && !G.over && G.moved) { Profile.closePanel(); toast('Finish or quit this game first.'); return; }
+    Profile.closePanel();
+    if (store.tab !== 'play') setTab('play');
+    newGame({ daily: day });
+  }
   function setupHTML() {
     const st = S();
     const lv = (k, label, note) => `<button class="${st.level === k ? 'on' : ''}" data-level="${k}">${label}<small>${note}</small></button>`;
@@ -958,7 +1073,7 @@
       <div class="panel"><h2>Computer level <button class="q" data-help="strength" aria-label="How strong">?</button></h2>
         <div class="seg">${lv('easy', 'Easy', notes.easy)}${lv('medium', 'Medium', notes.medium)}${lv('hard', 'Hard', notes.hard)}</div></div>
       <div class="row" style="gap:8px"><button class="btn primary" data-new="1" style="flex:2;min-height:50px;font-size:17px">Deal</button><button class="btn" data-online="1" style="flex:1;min-height:50px">Online</button></div>${resume}
-      <div class="record">Your wins: ${rec}</div>
+      ${Profile ? `<div class="row pf-row"><button class="btn pf-open me-btn" data-me="1" aria-label="My stats">${meLabel()}</button><button class="btn daily-btn" data-daily="1">${dailyLabel()}</button></div>` : `<div class="record">Your wins: ${rec}</div>`}
     </div>`;
   }
 
@@ -1100,8 +1215,9 @@
       <tr><td>Hard vs Easy (1 on 1)</td><td>Hard ${st.strength.hardVsEasy.hard}%</td></tr>
       <tr><td>Hard vs Medium (1 on 1)</td><td>Hard ${st.strength.hardVsMedium.hard}%</td></tr>
       <tr><td>Medium vs Easy (1 on 1)</td><td>Medium ${st.strength.mediumVsEasy.medium}%</td></tr>
-      <tr><td>Easy, Medium, Hard together</td><td>Hard ${st.strength.threeWay.hard}% · Medium ${st.strength.threeWay.medium}% · Easy ${st.strength.threeWay.easy}%</td></tr></table>
-      <p>Measured ${esc(st.made)} by playing ${st.strength.games.duel} games per pairing with seats rotated (a fair coin would be 50%, or 33% three ways).</p>` : '<p>Loading…</p>';
+      <tr><td>Easy, Medium, Hard together</td><td>Hard ${st.strength.threeWay.hard}% · Medium ${st.strength.threeWay.medium}% · Easy ${st.strength.threeWay.easy}%</td></tr>${st.strength.hardVs3Medium ? `
+      <tr><td>Hard vs 3 Medium</td><td>Hard ${st.strength.hardVs3Medium.hard}% (fair share 25%)</td></tr>` : ''}</table>
+      <p>Measured ${esc(st.strengthMade || st.made)} by playing ${st.strength.games.duel} games per pairing with seats rotated (a fair coin would be 50%, or 33% three ways).</p>` : '<p>Loading…</p>';
     const handRows = st ? st.hands.rows.map((r) => {
       const w = r.win;
       return `<div class="barrow"><span>${esc(r.hand.replace('+', ' + '))}</span><div class="track"><i style="width:${Math.min(100, w * 2)}%;background:${scale((w - 20) / 26)}"></i></div><b>${w}%</b></div>`;
@@ -1157,6 +1273,9 @@
       <div class="label" style="margin:16px 0 4px">Variants</div>
       <div class="setrow"><div class="k">Inquisitor<small>Replaces all 3 Ambassadors</small></div>${sw('inquisitor')}</div>
       <div class="setrow"><div class="k">2-player deal <button class="q" data-help="twodeal">?</button><small>Official setup for 1 opponent</small></div>${sw('twoDeal')}</div>
+      <div class="label" style="margin:16px 0 4px">Help</div>
+      <div class="setrow"><div class="k">Rules<small>The whole game on one page</small></div><button class="btn small" data-rules="1">Rules</button></div>
+      <div class="setrow"><div class="k">Guided first game<small>2 Easy computers, step by step</small></div><button class="btn small" data-tutorial="1">Start</button></div>
       <div class="label" style="margin:16px 0 4px">Sound &amp; effects</div>
       <div id="fxset"></div>
       <div class="label" style="margin:16px 0 4px">Your record</div>
@@ -1167,10 +1286,75 @@
     else $('#fxset').previousElementSibling.remove();
   }
 
+  // ------------------------------------------------------------------ rules sheet + guided first game (shared _coach kit)
+  function rulesSheet() {
+    const row = (c) => `<tr><td><b>${c}</b></td><td>${ABOUT[c][0]}</td><td>${ABOUT[c][1]}</td></tr>`;
+    return {
+      title: 'Coup rules',
+      intro: 'Bluff, call bluffs, be the last one standing.',
+      sections: [
+        { id: 'goal', title: 'Goal and setup', short: 'Setup', html: `<p>Be the last player with a card still face down.</p>
+          <ul><li>15 cards: 3 each of the Duke, Assassin, Captain, Ambassador and Contessa.</li>
+          <li>Everyone gets 2 cards face down (look at your own, hide them) and 2 coins. In a 2-player game the starting player gets 1 coin.</li>
+          <li>The other cards are the Court deck; the coins are the Treasury.</li></ul>` },
+        { id: 'turn', title: 'Your turn', short: 'Turn', html: `<p>Take exactly one action.</p>
+          <table><tr><td><b>Income</b></td><td>Take 1 coin. Nobody can stop it.</td></tr>
+          <tr><td><b>Foreign aid</b></td><td>Take 2 coins. A Duke can block it.</td></tr>
+          <tr><td><b>Coup</b></td><td>Pay 7: a player loses a card. Can't be blocked or challenged.</td></tr>
+          <tr><td><b>Character</b></td><td>Use any character's action below, whether you hold that card or not.</td></tr></table>
+          <p class="tip">With 10 or more coins at the start of your turn you must Coup.</p>` },
+        { id: 'chars', title: 'The characters', short: 'Cards', html: `<table><tr><th>Card</th><th>Action</th><th>Blocks</th></tr>${E.BASE_CHARS.map(row).join('')}</table>
+          <p>Inquisitor variant: it replaces all 3 Ambassadors. ${ABOUT.Inquisitor[0]}; it blocks stealing.</p>` },
+        { id: 'challenge', title: 'Challenges', short: 'Challenge', html: `<p>Any claim (an action or a block) can be challenged by any player.</p>
+          <ul><li><b>The card is there:</b> the claimer shows it, shuffles it into the deck and draws a new one. The challenger loses a card.</li>
+          <li><b>It was a bluff:</b> the bluffer loses a card and the action fails. Coins paid for it come back.</li></ul>` },
+        { id: 'block', title: 'Blocks', short: 'Block', html: `<ul><li>A Duke blocks Foreign aid (anyone may block it).</li>
+          <li>A Captain or an Ambassador blocks a Steal (only the player being robbed).</li>
+          <li>A Contessa blocks an Assassination (only the target). The Assassin's 3 coins stay spent.</li></ul>
+          <p>Blocks are claims too, so they can be challenged.</p>` },
+        { id: 'end', title: 'Losing cards and the end', short: 'End', html: `<p>When you lose a card you choose which one and turn it face up. With no cards left you are out, and your coins go back to the Treasury.</p>
+          <p>The last player with a card face down wins.</p>` },
+      ],
+    };
+  }
+  function openRules() {
+    if (!COACH) return;
+    closeSheet();
+    try { history.pushState({ tab: store.tab, sheet: 1 }, ''); } catch (e) { /* history blocked */ }
+    COACH.rules(rulesSheet());
+  }
+  // The guided first game: steps follow the game's own state; they step aside on other tabs and under sheets.
+  const myQ = (kinds) => G && !G.over && G.s.pending && G.s.pending.p === ME && kinds.includes(G.s.pending.kind);
+  const tutSteps = () => [
+    { title: 'Your two cards', text: 'These characters are yours alone. Each card is a life: lose both and you are out.', target: '#tab-play .me-row .cards' },
+    { title: 'Ava and Ben', text: 'Each opponent has 2 cards face down and some coins. Tap a seat any time to see it up close.', target: '#tab-play .opps' },
+    { title: 'One action a turn', text: 'Any character\'s action can be claimed, whether you hold that card or not. Claiming one you don\'t hold is a bluff.', target: '#tab-play .actions' },
+    { title: 'Take Tax', text: 'You hold a Duke, so Tax is safe: 3 coins, and if someone challenges you show the Duke and they lose a card.', target: '#tab-play [data-act="tax"]',
+      when: () => myQ(['action']), until: () => !!(G && G.s.events.some((e) => e.t === 'action' && e.p === ME)), skipIf: () => !!(G && G.s.events.some((e) => e.t === 'action' && e.p === ME)) },
+    { title: 'Is it true?', text: 'Someone claims a character. The big % is how likely they really hold it. Catch a bluff and they lose a card; challenge the truth and you lose one.', target: '#tab-play .stage',
+      when: () => myQ(['challenge', 'block']), until: () => !myQ(['challenge', 'block']), skipIf: () => !G || G.over },
+    { title: 'Hint and Undo', text: 'Stuck? Hint shows what the Hard computer would do, and why. Undo takes back your last move. Games where you use them are not rated.', target: '#tab-play .me-row .side' },
+    { title: 'Last one standing', text: 'Keep going until one player has a card left. The full rules are in Settings.', target: '#tab-play .stage' },
+  ];
+  let tour = null;
+  function startTutorial() {
+    if (!COACH || !tour) return;
+    if (G && G.online) { toast('Leave the online room first.'); return; }
+    closeSheet();
+    if (store.tab !== 'play') setTab('play');
+    tour.reset();
+    newGame({ tutorial: true });
+    tour.start();
+  }
+  function offerTutorial() {
+    if (!COACH || !tour || tour.seen() || COACH.offered('coup-first') || G) return;
+    COACH.offer({ id: 'coup-first', title: 'New to Coup?', text: 'Play a guided first game against two Easy computers.', yes: 'Teach me', no: 'No thanks', onYes: () => startTutorial() });
+  }
+
   const HELP = {
     odds: 'Every card you can\'t see could be in any hidden spot, so we start by counting. Then each claim shifts the odds: a player who holds the card always may claim it, a player who doesn\'t only sometimes does (the "how much people bluff" setting). A caught bluff means they certainly don\'t have it; a card shown and shuffled away resets that.',
     claim: 'This is the chance this player really holds the card they just claimed, using the cards you can see, your own hand, and everything they have claimed or skipped so far.',
-    strength: 'Each level played thousands of games against the others with seats rotated, so the numbers are measured, not guessed. Hard weighs the odds of each claim against what a challenge risks; Medium uses the same odds more timidly; Easy plays honest and calls bluffs at random. "Beats Easy" is one computer against one Easy. "Wins 3-way" is Hard against one Easy and one Medium, where a fair share is 33%. One against one, Hard and Medium come out about even.',
+    strength: 'Each level played thousands of games against the others with seats rotated, so the numbers are measured, not guessed. Hard plays each choice out against likely hands before it moves; Medium weighs the odds of each claim against what a challenge risks; Easy plays honest and calls bluffs at random. "Beats Easy" is one computer against one Easy. "Wins 3-way" is Hard against one Easy and one Medium, where a fair share is 33%. One against one, Hard beats Medium about 3 games in 4.',
     bluff: 'How often a player who does NOT hold a card still claims it, compared with a player who does. Pick what fits your table; it changes every odds number.',
     twodeal: 'The rulebook\'s 2-player setup: each player picks 1 card from a set of all five characters and sets the other 4 aside face down, then gets 1 random card. The deck is only 3 cards.',
     online: 'Make a room and share the 5-letter code. Each seat is a friend or a computer. The host’s browser runs the computers and checks every move, and each player’s cards are only ever sent to that player. If someone drops out, a computer keeps their seat going; reloading the page puts you back in.',
@@ -1191,7 +1375,7 @@
     if (ds.opps) { S().opps = +ds.opps; save(); renderPlay(); return; }
     if (ds.level) { S().level = ds.level; save(); renderPlay(); return; }
     if (ds.new) { closeSheet(); newGame(); return; }
-    if (ds.online) { openOnline(); return; }
+    if (ds.online) { if (COACH) COACH.closeOffer(); openOnline(); return; }
     if (ds.netleave) {
       if (G && !G.over) { confirmBox('Leave this game?', 'A computer takes over your seat.', 'Leave', netLeave); return; }
       netLeave(); return;
@@ -1207,9 +1391,14 @@
     if (ds.quit) {
       if (G && G.online) { if (G.over) netLeave(); else confirmBox('Leave this game?', 'A computer takes over your seat.', 'Leave', netLeave); return; }
       if (G && G.over) { quitGame(); return; }
-      confirmBox('Quit this game?', 'It will count as unfinished.', 'Quit', quitGame); return;
+      confirmBox('Quit this game?', G && G.moved && !G.tutorial ? 'It counts as a loss in My stats.' : 'It will count as unfinished.', 'Quit', quitGame); return;
     }
     if (ds.review) { openReview(); return; }
+    if (ds.undo) { undo(); return; }
+    if (ds.me) { if (Profile) Profile.openPanel(); return; }
+    if (ds.daily) { startDaily(); return; }
+    if (ds.rules) { openRules(); return; }
+    if (ds.tutorial) { startTutorial(); return; }
     if (ds.log && G) { sheet(`<h3>Game log<button class="btn small ghost" data-s="x">Close</button></h3><div class="body"><div class="log full">${logHTML(G.s)}</div></div>`, () => closeSheet()); return; }
     // ---- a tap on an opponent's seat (when not picking a target) shows their cards up close
     if (ds.opp != null && G && !(selAction && G.s.pending && isHuman(G.s.pending.p) && G.s.pending.kind === 'action')) { openSeat(+ds.opp); return; }
@@ -1329,6 +1518,7 @@
     const g = store.game && store.game.s ? store.game : null;
     GEN++;
     G = g;
+    undoStack = [];
     if (G) { hint = null; selAction = null; }
     if ($('#overlay .choose') && !(G && G.s.pending && (G.s.pending.kind === 'exchange' || G.s.pending.kind === 'pick') && isHuman(G.s.pending.p))) closeSheet();
     render();
@@ -1347,16 +1537,56 @@
 
   // ------------------------------------------------------------------ boot
   fetch('data/stats.json', { cache: 'no-store' }).then((r) => (r.ok ? r.json() : null)).then((j) => { strength = j; render(); }).catch(() => {});
+  // My stats, achievements and the Daily game (shared _profile kit; everything stays on this device)
+  if (Profile) {
+    try {
+      Profile.init({
+        game: 'coup', levels: PF_LEVELS, achievements: ACHIEVEMENTS, draws: false,
+        modes: { computer: { name: 'Vs the computer' }, help: { name: 'With Hint or Undo' }, online: { hide: true }, friends: { hide: true } },
+        daily: { title: 'Daily game', onPlay: () => startDaily() },
+        onChange: (what) => { if (store.tab === 'play' && !G && (what === 'me' || what === 'import' || what === 'result' || what === 'reset')) renderPlay(); },
+      });
+      // bring the old win counts into My stats once (unrated: they were counted before ratings existed)
+      if (!store.pfMoved) {
+        store.pfMoved = true; save();
+        const day = Profile.daily.date();
+        for (const k of ['easy', 'medium', 'hard']) {
+          let w = Math.min(200, store.stats[k].w), l = Math.min(200, store.stats[k].g - store.stats[k].w);
+          while (w > 0 || l > 0) {   // interleaved, so moving them in doesn't invent a winning streak
+            if (l > 0) { l--; Profile.recordResult({ mode: 'computer', level: null, won: false, date: day, quiet: true }); }
+            if (w > 0) { w--; Profile.recordResult({ mode: 'computer', level: null, won: true, date: day, quiet: true }); }
+          }
+        }
+      }
+    } catch (e) { console.warn('profile', e); }
+  }
+  if (COACH) {
+    try {
+      tour = COACH.tour({
+        id: 'coup-first', steps: tutSteps(),
+        pauseIf: () => store.tab !== 'play' || !(G && G.tutorial) || !!$('#overlay').innerHTML || !!(Profile && Profile.isOpen()),
+      });
+    } catch (e) { console.warn('coach', e); }
+  }
+  // home-screen install: reload for a new build only when nothing would be lost
+  if (window.PWA) window.PWA.safeToReload = () => {
+    const ae = document.activeElement;
+    if (NET || $('#overlay').innerHTML || (COACH && COACH.rulesOpen()) || (Profile && Profile.isOpen())) return false;
+    if (ae && /^(INPUT|SELECT|TEXTAREA)$/.test(ae.tagName)) return false;
+    return !G || G.over;
+  };
   // a finished game stays on the table after a reload (result + Review), until Close or New game
   if (store.game && store.game.s && store.game.s.pending !== undefined) G = store.game;
   claimDriver();
   try { history.replaceState({ tab: store.tab || 'play' }, ''); } catch (e) { /* history blocked */ }
   setTab(store.tab || 'play', true);
   if (G && !G.over) run(++GEN);
+  if (G && G.tutorial && !G.over && tour) tour.resume();
+  else setTimeout(offerTutorial, 600);
   // back into an online room after a reload
   if (store.netOn) {
     netRoom().then((room) => room.resume()).then((ok) => { if (!ok) { NET = null; store.netOn = false; save(); renderPlay(); } })
       .catch(() => { NET = null; store.netOn = false; save(); renderPlay(); });
   }
-  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, netLog: NETLOG, get revived() { return revived; }, newGame, step: (d) => human(d) };
+  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, netLog: NETLOG, get revived() { return revived; }, newGame, step: (d) => human(d), undo, get undoCount() { return undoStack.length; }, startDaily, startTutorial, get tour() { return tour; } };
 })();

@@ -685,3 +685,11 @@ input[type=text] { background: var(--bg-soft); border: 1px solid var(--line); co
   #tab-play .stage .prompt { display: flex; }
   #tab-play .stage .acts .btn { white-space: normal; padding: 6px 8px; }
 }
+/* ---- improve pass (2026-10-27): My stats + Daily game on the setup screen, Undo beside Hint */
+#tab-play .pf-row { display: flex; gap: 8px; margin-top: 8px; }
+#tab-play .pf-row .btn { flex: 1 1 0; min-width: 0; min-height: 48px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 8px; align-items: center; justify-items: start; text-align: left; padding: 6px 12px; }
+#tab-play .pf-row .btn > svg { grid-row: 1 / 3; width: 26px; height: 26px; }
+#tab-play .pf-row .btn span { font-weight: 700; font-size: 15px; line-height: 1.15; }
+#tab-play .pf-row .btn .wl { font-size: 12px; color: var(--muted); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+#tab-play .pf-row .daily-btn { grid-template-columns: 1fr; }
+#tab-play .me-row .side .row { flex-wrap: wrap; justify-content: flex-end; }
