@@ -68,9 +68,9 @@
           if (tn.actor === me) proveMine(def.claim, tn.chal.proofNew);
           lose(tn.chal.by, tn.chal.lose, 'challenge');
         } else {
-          lose(tn.actor, tn.chal.lose, 'bluff');
+          actor.coins += def.cost;      // a failed challenged action refunds its cost (before the loss, like the engine:
+          lose(tn.actor, tn.chal.lose, 'bluff');   //  a bluffer who goes out returns those coins too)
           failed = true;
-          actor.coins += def.cost;      // a failed challenged action refunds its cost
         }
       }
       const tAlive = tn.target != null && tn.target >= 0 && P[tn.target].alive;

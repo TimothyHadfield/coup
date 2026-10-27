@@ -6,6 +6,9 @@ const E = require('../js/engine.js');
 const T = require('../js/table.js');
 const S = require('../tools/sim.js');
 const AI = require('../js/ai.js');
+// Hard's look-ahead with no time cut-off (the same games on every run, however busy the laptop) and a
+// smaller search so 200 games stay quick; the companion only needs varied games, not the strongest play.
+Object.assign(AI.SEARCH, { budgetMs: 1e9, worlds: 3, maxCands: 3 });
 
 let pass = 0, fail = 0;
 function test(name, fn) {
