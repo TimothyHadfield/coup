@@ -26,6 +26,10 @@ const POS = {
   challenge6: `const s = E.newGame({ names: ${NAMES}, seed: 7, rules: {}, first: 1 });
     s.players[3].cards[0].dead = true; s.players[0].cards[1].dead = true;
     E.act(s, { action: 'tax' }); while (s.pending && s.pending.p !== 0) E.act(s, { challenge: false }); return s;`,
+  late6: `const s = E.newGame({ names: ${NAMES}, seed: 5, rules: {}, first: 0 });
+    for (const i of [2,4,5]) s.players[i].cards.forEach(c => c.dead = true);
+    s.players[1].cards[0].dead = true; s.players[0].cards[0].dead = true;
+    s.players[0].coins = 7; s.players[1].coins = 12; s.players[3].coins = 3; return s;`,
   block6: `const s = E.newGame({ names: ${NAMES}, seed: 7, rules: {}, first: 1 });
     s.players[0].coins = 4; E.act(s, { action: 'steal', target: 0 });
     while (s.pending && s.pending.kind === 'challenge') E.act(s, { challenge: false }); return s;`,
@@ -107,6 +111,41 @@ await check('V-se-challenge', 'Challenge question on an iPhone SE with 6 players
   const m = await M(page);
   return { pass: m.btnOverCards <= 0 && m.refBottom <= m.floor + 1, note: `buttons ${m.btnOverCards}px over your cards, reference card ends ${m.refBottom} (tab bar ${m.floor})` };
 });
+for (const size of ['phone', 'se']) {
+  await check(`V-log-${size}`, `Block question + Hint at ${size}: no line of the log strip is cut in half`, size, 'block6', async (page) => {
+    await page.waitForTimeout(450);
+    await page.click('[data-hint]');
+    await page.waitForTimeout(500);
+    const cut = await page.evaluate(() => {
+      const t = document.querySelector('#tab-play .game > .tlog');
+      if (!t || !t.offsetParent) return [];
+      const tb = t.getBoundingClientRect().bottom;
+      return [...t.children].filter((d) => d.offsetParent).filter((d) => { const r = d.getBoundingClientRect(); return r.top < tb - 1 && r.bottom > tb + 1; }).map((d) => d.textContent.trim().slice(0, 30));
+    });
+    return { pass: !cut.length, note: cut.length ? 'cut: ' + cut.join(' | ') : '' };
+  });
+}
+await check('V-se-late', 'iPhone SE late game: Hint and Quit fully on screen, no opponent name cut to "A…"', 'se', 'late6', async (page) => {
+  const r = await page.evaluate(() => {
+    const g = document.querySelector('#tab-play .game').getBoundingClientRect();
+    const btns = [...document.querySelectorAll('#tab-play .me-row .btn')].filter((b) => b.getBoundingClientRect().right > g.right + 1).map((b) => b.textContent.trim());
+    const names = [...document.querySelectorAll('#tab-play .opp .nm')].filter((n) => n.scrollWidth > n.clientWidth + 1).map((n) => n.textContent.trim());
+    return { btns, names };
+  });
+  return { pass: !r.btns.length && !r.names.length, note: JSON.stringify(r) };
+});
+for (const pos of ['block6', 'turn6']) {
+  await check(`V-se-gutter-${pos}`, `iPhone SE, 6 players (${pos}): nothing on the table pokes past the right gutter, no text clipped`, 'se', pos, async (page) => {
+    const r = await page.evaluate(() => {
+      const g = document.querySelector('#tab-play .game').getBoundingClientRect();
+      const els = [...document.querySelectorAll('#tab-play .game > *, #tab-play .stage .btn, #tab-play .refcard .act, #tab-play .opp')].filter((e) => e.offsetParent);
+      const out = els.filter((e) => e.getBoundingClientRect().right > g.right + 1).map((e) => e.className.split(' ')[0] + ' +' + Math.round(e.getBoundingClientRect().right - g.right));
+      const clipped = [...document.querySelectorAll('#tab-play .stage .btn, #tab-play .refcard .act b')].filter((e) => e.offsetParent && e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent.trim());
+      return { out, clipped };
+    });
+    return { pass: !r.out.length && !r.clipped.length, note: [r.out.length ? 'past the gutter: ' + r.out.slice(0, 4).join(', ') : '', r.clipped.length ? 'clipped: ' + r.clipped.join(', ') : ''].filter(Boolean).join('; ') };
+  });
+}
 await check('V-land-quit', 'phone on its side: Hint and Quit are not hidden under the reference card', 'land', 'turn6', async (page) => {
   const r = await page.evaluate(() => {
     const ref = document.querySelector('#tab-play .actions').getBoundingClientRect();

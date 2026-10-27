@@ -36,3 +36,9 @@
 - **Verified:** 53 scenarios (list in progress.md); the 5 failures each failed on the old code and pass now; 2,100-game node simulation for rules oddities; engine/odds/table/online node tests, `ui.play.mjs` (393 + 1280), `ui.fx.mjs`.
 - **Open:** background-for-10-minutes, Firestore drop mid-game, real iPhone.
 - **Follow-up (same day):** a tighter two-tab test showed the first tap in the other tab was lost (the driver hand-off re-drew the table on pointerdown). Fixed: the loop restarts after pointerup. Test failed on 5c2c5d1 live, passes on the fix.
+
+## 2026-10-21 / 10-27 — visibility pass (builder agents)
+- **Asked (Tim):** "for a lot of the games the cards or board layout is too small to easily see what's going on ... Fix this so the view of what's happening and where everything is is very clear."
+- **Built:** opponents' cards sized to fill the far side of the table (laptop 46 -> 73-88 px wide, 2 players on phone 36 -> 73 px); 6 seats no longer slide under the laptop Odds panel; tap an opponent to see their cards up close; Challenge/Block buttons use the full table width on phone and the reference card goes compact while a question needs the room (nothing pushed off screen or over your cards); the Hint reason shows in the log strip; at 320 px the table fits its column (was 13 px past the right gutter) and Hint/Quit stack so Quit isn't cut off; landscape Hint/Quit stack too; Table tab cards bigger (laptop 34 -> 52 px, 3 across). Paused 10-21 as a WIP commit, finished 10-27.
+- **Verified:** new `tests/ui.visibility.mjs` (14 checks, WebKit): each failed on the old build, all pass now; tap hits checked in WebKit and Chrome at 320/393/1280; before/after shots of 8 states x 5 sizes, outside reviewer; full suite (engine, odds, table, ai, online, ui.play 393 + 1280, ui.fx, ui.edge).
+- **Open:** 6 players on a phone: opponents' cards stay 34-36 px wide (height-limited; tap a seat to zoom). Real iPhone.

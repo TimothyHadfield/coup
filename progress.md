@@ -1,7 +1,7 @@
 # Coup — progress
 
 ## START HERE
-Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-20 (weird-situation pass: `tests/ui.edge.mjs`; before that the real-table look, sounds/animations and the visual design pass).
+Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-27 (visibility pass: `tests/ui.visibility.mjs`; before that the weird-situation pass `tests/ui.edge.mjs`, the real-table look, sounds/animations and the visual design pass).
 
 ## Goal right now
 Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at it on his phone.
@@ -20,6 +20,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 | Sound & effects (2026-10-20) | Done: `js/fx.js` (copy of `../_fx/fx.js`, never edit) + the "sound & effects" block in `js/app.js`; Settings has a Sound & effects section; `tests/ui.fx.mjs` |
 | Real-table look (2026-10-20) | Done: dark wood table, Court deck stack + Treasury coin heap in the middle, opponents round the far side on an arc with brass name plates, your 2 cards tilted in front of you with a real coin pile, actions on a cream reference card; cards fly from the deck when dealt / returned. Kit = `css/table.css` + `js/tablekit.js` (copies of `../_table/`, never edit); our CSS is the "table look" block at the end of `styles.css` |
 | Weird-situation pass (2026-10-20) | Done: 53 scenarios, 5 failed and fixed (table below); `tests/ui.edge.mjs` re-runs the 41 browser ones |
+| Visibility pass (2026-10-27) | Done: opponents' cards sized to fill the far side (`fitSeats` in `js/app.js`, worked out once per screen size + player count so nothing jumps), tap a seat for a close-up (`openSeat`), phone questions use the full table width, reference card compacts when a question needs room (`fitTight`), 320 px fits its column; CSS "visibility pass" block at the end of `styles.css`; `tests/ui.visibility.mjs` (14 checks) |
 | Live | https://timothyhadfield.github.io/coup/ |
 
 **Weird-situation pass** (`node tests/ui.edge.mjs <url> <outDir> [ids]`, WebKit; rules ones in node):
@@ -65,6 +66,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - "add opptional sounds you can add to the games that reflect what's happening in the game accurately as well as win celebrations, and other fun annimations to go along with everything. Just make sure everything is customizable in the settings so the user can play as preffered." (2026-10-20)
 - "could you also make sure that each of the games also have a look to them so that the game (either board or card layout) looks almost identical to how the board or card layout looks like in real life, so it's easy to understand if you've already played it before, and also so it feels more like you're actually playing in real life rather than you're playing it online. Even things like how youre cards or other things are laid out infront of you, make it look like they are actual cards laid out similar to how it looks like in real life. Make the decks look like actual decks. Make the board have the same design as it does in real life with the same layouts. It should look kind of like you're looking through a camera that is connected to a user's glasses that is playing in real life (not actually, but the layout and style of everything should be similar)." (2026-10-20)
 
+- "for a lot of the games the cards or board layout is too small to easily see what's going on. Some games just need small design imporvements like filling the screen with the board view and fitting the cards and other things in the empty space, some have severe errors like TTR. Fix this so the view of what's happening and where everything is is very clear. Consider parts of the board that are dense in what's happening and if the user can reasonably see it." (2026-10-21)
 - "I've noticed the games often have good user interfaces but could be improved especially when a scenario happens that the game might've not really thought about or whatnot. Could you focus on making each game perfect especially in scenarios that the game doesn't expect or are a little weird." (2026-10-20)
 
 ## Traps
@@ -104,6 +106,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Table-look review (outside reviewer, 2026-10-20) fixes: lost cards are lighter (brightness .78, readable face up like a real table), the phone log strip shows 2 whole lines (2nd faint) instead of a half-cut fade, a 0-coin count is faint. Not done (Tim's call): odds bars, Hint/Quit look, coin piles under the cards, refcard tilt, claimed-card ghost in the middle, bigger laptop opponent cards.
 - A finished game stays on the Play table after a reload; Close or New game clears it.
 - Computers wait while the game is being moved by another tab; whichever tab you touch takes over.
+- Visibility: with 3+ opponents the seats may sit in two rows (middle seats across the far side, outer two nearer you); on phone, while a Hint is showing, the log strip shows only the hint (the move is already in the middle); on an iPhone SE upright, Hint and Quit stack.
 
 ## NOT verified
 - Real iPhone Safari (only WebKit headless at 393px). The design pass relies on CSS `:has()` (Safari 15.4+).
@@ -116,6 +119,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Table look: reviewer ran 2026-10-20 on the old screenshots; its small fixes are in, the bigger ones are listed under Decisions as Tim's call. Card proportions 63x88 are from sleeve listings (reasoned).
 - Weird-situation pass: page left in the background for 10 minutes, Firestore dropping mid-game, AFK / host leaving online, and the "finished room with no winner" guard were not run (reasoned).
 - Rule edge: 2-player-variant coin split (GameRules says both 1 coin).
+- Visibility pass: with 6 players on a phone, opponents' cards stay 34-36 px wide (lost-card names ~7 px); the height is the limit because the middle keeps room for any question so nothing jumps. Tap a seat for the 112 px close-up. Laptop Hint/Quit stay small (Tim's call, see Decisions).
 
 ## Rejected / parked
 - ~~Win-probability meter~~ heavy on phone; claim odds answer the real question.
