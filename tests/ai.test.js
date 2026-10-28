@@ -60,6 +60,24 @@ test('Hint explains itself in plain words', () => {
   const r = AI.decide(E.view(s, s.pending.p), s.pending, 'hard', Math.random, E.legalActions(s, s.pending.p));
   assert.ok(r.why && r.why.length > 5 && r.why.length < 120, r.why);
 });
+test("Hard's look-ahead builds the real Court deck in the 2-player deal (set-aside cards stay out)", () => {
+  let n = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const s = E.newGame({ names: ['a', 'b'], seed, rules: { twoPlayerDeal: true } });
+    let r = seed; const rnd = () => { r = (r * 16807) % 2147483647; return r / 2147483647; };
+    for (let t = 0; t < 40 && s.pending; t++) {
+      const pd = s.pending, pl = s.players[pd.p];
+      if (pd.kind === 'action' && pl.knownOut.length) {
+        const w = AI.worldFrom(E.view(s, pd.p), rnd, s.rules); n++;
+        assert.strictEqual(w.deck.length, s.deck.length, 'deck size');
+        assert.ok(pl.knownOut.every((c) => w.out.includes(c)), 'set-aside cards are out');
+        assert.ok(pl.knownDeck.every((c) => w.deck.includes(c)), 'known deck cards are in the deck');
+      }
+      E.act(s, AI.decide(E.view(s, pd.p), pd, 'medium', rnd, pd.kind === 'action' ? E.legalActions(s, pd.p) : null, s.rules).d);
+    }
+  }
+  assert.ok(n > 100, 'checked ' + n);
+});
 test('measured strength: Hard > Medium > Easy (fixed seeds)', () => {
   const he = S.matchup(['hard', 'easy'], 300, 7000).wins;
   const me = S.matchup(['medium', 'easy'], 300, 7000).wins;

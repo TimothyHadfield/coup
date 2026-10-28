@@ -4,6 +4,8 @@ import { createLocal } from '../js/online.js';
 const require = createRequire(import.meta.url);
 const { game, mergeView, stateFromView } = require('../js/coupgame.js');
 const E = require('../js/engine.js');
+// Hard's look-ahead, smaller and untimed: the same games every run, and 80 all-Hard games stay quick
+Object.assign(require('../js/ai.js').SEARCH, { budgetMs: 1e9, worlds: 2, maxCands: 3, depth: 2 });
 
 let pass = 0, fail = 0;
 function t(name, fn) {

@@ -405,11 +405,13 @@
   function worldFrom(view, rnd, rules, post) {
     const { hands, rest } = sampleHands(view, rnd, rules, post);
     for (let k = rest.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); const t = rest[k]; rest[k] = rest[j]; rest[j] = t; }
+    // view.knownDeck also holds the cards I set aside in the 2-player deal (view.knownOut): those are out, not in the deck
     const known = (view.knownDeck || []).slice();
+    for (const c of view.knownOut || []) { const k = known.indexOf(c); if (k >= 0) known.splice(k, 1); }
     const deckN = Math.max(0, view.deckSize - known.length);
     const deck = rest.slice(0, deckN).concat(known);
     for (let k = deck.length - 1; k > 0; k--) { const j = Math.floor(rnd() * (k + 1)); const t = deck[k]; deck[k] = deck[j]; deck[j] = t; }
-    const out = rest.slice(deckN);
+    const out = rest.slice(deckN).concat(view.knownOut || []);
     const lastTurn = view.events.length ? view.events[view.events.length - 1].turnNo || 0 : 0;
     const s = {
       n: view.players.length, rs: (rnd() * 4294967296) >>> 0 || 1, turn: view.turn, turnNo: lastTurn, rules: view.rules || Eng.ruleSet(rules),
@@ -535,7 +537,7 @@
     }
   }
 
-  const api = { decide, SEARCH, PARAMS, VAL, NAME, chooseAction, chooseChallenge, chooseBlock, chooseLose, chooseExchange };
+  const api = { decide, SEARCH, worldFrom, PARAMS, VAL, NAME, chooseAction, chooseChallenge, chooseBlock, chooseLose, chooseExchange };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CoupAI = api;
 })(typeof self !== 'undefined' ? self : this);

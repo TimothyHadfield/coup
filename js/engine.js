@@ -504,6 +504,7 @@
       })),
       myCards: p >= 0 ? s.players[p].cards.map((cd) => ({ c: cd.c, dead: cd.dead })) : [],
       knownDeck: p >= 0 ? s.players[p].knownDeck.concat(s.players[p].knownOut) : [],
+      knownOut: p >= 0 ? s.players[p].knownOut.slice() : [],   // the part of knownDeck set aside (2-player deal), not in the deck
       peeks: p >= 0 ? s.players[p].peeks.slice() : [],
       events: publicEvents(s.events),
       pending: pend,
