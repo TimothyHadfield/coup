@@ -155,7 +155,7 @@
     if (t.actor == null) return { id: 'actor', ask: 'Whose turn?', options: P.map((p, i) => (p.alive ? { label: name(i), value: i } : null)).filter(Boolean) };
     if (!t.action) {
       const coins = P[t.actor].coins;
-      const acts = Eng.ACTION_ORDER.filter((a) => (a !== 'examine' || rules.inquisitor) && coins >= Eng.ACTIONS[a].cost && (coins < 10 || a === 'coup'));
+      const acts = Eng.ACTION_ORDER.filter((a) => (a !== 'examine' || rules.inquisitor) && !Eng.ACTIONS[a].factions && coins >= Eng.ACTIONS[a].cost && (coins < 10 || a === 'coup'));
       return { id: 'action', ask: `${name(t.actor)}: which action?`, options: acts.map((a) => ({ label: Eng.ACTIONS[a].label, value: a, action: a })) };
     }
     const def = Eng.actionDef({ rules }, t.action);

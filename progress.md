@@ -1,7 +1,7 @@
 # Coup — progress
 
 ## START HERE
-Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-27 (improve pass: Hard look-ahead, My stats / Daily / Undo / guided game / Rules / home-screen install, `tests/ui.improve.mjs`; before that the visibility pass, the weird-situation pass, the real-table look, sounds/animations and the visual design pass).
+Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-28 (wave 3: Factions variant, Learn videos, Confirm challenges, coach offer no longer covers the tab bar, `tests/factions.test.js` + `tests/ui.wave3.mjs`; before that the improve pass: Hard look-ahead, My stats / Daily / Undo / guided game / Rules / home-screen install, `tests/ui.improve.mjs`; before that the visibility pass, the weird-situation pass, the real-table look, sounds/animations and the visual design pass).
 
 ## Goal right now
 Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at it on his phone.
@@ -22,7 +22,12 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 | Weird-situation pass (2026-10-20) | Done: 53 scenarios, 5 failed and fixed (table below); `tests/ui.edge.mjs` re-runs the 41 browser ones |
 | Visibility pass (2026-10-27) | Done: opponents' cards sized to fill the far side (`fitSeats` in `js/app.js`, worked out once per screen size + player count so nothing jumps), tap a seat for a close-up (`openSeat`), phone questions use the full table width, reference card compacts when a question needs room (`fitTight`), 320 px fits its column; CSS "visibility pass" block at the end of `styles.css`; `tests/ui.visibility.mjs` (14 checks) |
 | Improve pass (2026-10-27) | Done: Hard looks ahead (`js/ai.js` "Hard: look ahead": samples likely hands from the odds, plays each top choice 4 turns out with Medium-style play, 600 ms cap); My stats + achievements + Daily game (`_profile` 1.1.0), Undo vs the computer, guided first game + Rules sheet (`_coach`), home-screen install + offline (`_pwa` 1.2.0, `tests/pwa-check.json`, 18/18); `tests/ui.improve.mjs` (33 checks) |
+| Wave 3 (2026-10-28, build 15) | Done: **Factions** variant (Settings → Variants, off by default; Reformation rules under a generic name: Loyalist/Reformist sides, Convert, Embezzle, Almshouse; engine + all 3 computers + odds + online rooms; `tests/factions.test.js` 15 tests, failed 12/15 on the old code); **Videos** section in the Rules sheet (5 links, below); **Confirm challenges** switch (Settings → Play, off by default); first-visit coach offer moved to the top of the screen (over the decorative card fan; top-right corner on laptops) so it covers neither the tab bar nor Deal (`.coach-offer` override in `styles.css`, no kit edit; in landscape phone it still covers the Opponents row); `tests/ui.wave3.mjs` (21 WebKit checks) |
 | Live | https://timothyhadfield.github.io/coup/ |
+
+**Factions strength** (`node tools/ladder-factions.js 400`, 2026-10-28, seats rotated; numbers not written to stats.json): Hard vs Medium 74.8%, Medium vs Easy 73.8%, Hard vs Easy 76.3% (400 each); three-way Easy/Medium/Hard 6/15.8/78.3%; Hard vs 3 Medium 78.5% (200, fair 25%); Medium vs 3 Easy 45% (200). Ladder holds.
+
+**Learn videos** (each checked with YouTube oembed 2026-10-28; `VIDEOS` in `js/app.js`): lPlBDZnxHQA "Coup - How To Play" (Watch It Played) · NHLV9BEfAog "Coup - Shut Up & Sit Down Review" · SBf-kE5rAVo "How to Win at Coup Every Time! | Simple Strategy #13" (StrataGames) · 1yX9bwlQk8I "Coup Reformation Review - with Tom Vasel" (Dice Tower) · qy-W3W5togk "Coup Reformation | Game the Game" (Geek & Sundry).
 
 **Weird-situation pass** (`node tests/ui.edge.mjs <url> <outDir> [ids]`, WebKit; rules ones in node):
 | Area | Checked | Was broken, now fixed |
@@ -91,7 +96,9 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - The old `.coin i` rules are scoped `:not(.pile)`; without that they flatten the kit's real coins.
 - Deal animation: cards not yet dealt are tracked in the `undealt` set ("seat:card") and re-hidden after every re-render, else they pop in early.
 - My stats (`js/profile.js`, key `profile:*` on device): a game counts once (`G.recorded`). Hint or Undo → "With Hint or Undo", unrated; guided game never counts; quitting / dealing over a game you moved in = loss, even when it sits behind "Resume last game" (after an online room `G` is null but `store.game` holds it). Daily = 3 Hard, no Undo, same deal everywhere (`Profile.daily.seed`); the Daily button resumes a paused Daily instead of re-dealing.
-- Coach "New to Coup?" offer covers the tab bar on a first visit; tests for returning players set `localStorage['coach-offer:coup-first']='1'`. `ui.edge.mjs` also blocks service workers (sw.js fetches bypass `page.route`, so the offline tests couldn't cut the net).
+- Factions (`rules.factions`): `E.sameSide` decides every "can't target" rule (only while both sides have a living player); Embezzle is a *denial* (`ACTIONS.embezzle.denies='Duke'`, pending `denies:true`), so challenge logic, odds and the AI all invert truth for it. Coins paid for Convert go to `s.reserve` (the Almshouse); `treasuryHTML` subtracts it. Daily and the guided game always use base rules.
+- WebKit logs a fetch cut by `page.reload()` as "... due to access control checks"; `ui.wave3.mjs` waits for network idle before reloading.
+- Coach "New to Coup?" offer used to cover the tab bar on a first visit (fixed in wave 3: moved to the top; just lifting it with `--coach-offer-bottom` made it cover Deal instead, which broke `ui.edge` R-storage-blocked); tests for returning players set `localStorage['coach-offer:coup-first']='1'`. `ui.edge.mjs` also blocks service workers (sw.js fetches bypass `page.route`, so the offline tests couldn't cut the net).
 - Hard's search is timed (600 ms): node tests that replay games set `AI.SEARCH.budgetMs = 1e9` (plus fewer worlds) so runs are repeatable. `ai.test.js` takes ~6 min; `NO_SEARCH=1` turns the search off.
 - `E.view` has `knownOut` (my set-aside cards in the 2-player deal; also inside `knownDeck`); the search keeps them out of the simulated deck.
 - Hard bots used to loop forever (Assassinate vs bluffed Contessa between two last-card players, ~1.5% of games). Fixed by making repeat attacks into a past block less attractive; `ai.test.js` guards it (failed on the old AI: 300 turns).
@@ -105,6 +112,8 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - Online: Opponents setting sets the seat count; host toggles each open seat friend/computer; open seats become computers at start; computers use the host's level. At game end all cards are revealed to everyone for the Review.
 - Online games don't count toward "Your wins" (now My stats; old win counts were moved in once as unrated results).
 - Improve pass: Daily = you + 3 Hard; guided game = 2 Easy, fixed deal with Duke + Captain, you start; Undo button sits beside Hint/Quit; Help (Rules, Guided first game) is a Settings section; My stats + Daily buttons replace the "Your wins" line on the setup screen. Phone mid-table space left as is (opponents already show face-down cards). 7-8 players not added (needs the expansion's card counts).
+- Factions (2026-10-28, manager's wave-3 brief picked it, overriding the old "Reformation parked"): generic names Loyalist/Reformist/Almshouse; starting side is random (seeded), then sides alternate round the table; the rulebook's "concede instead of revealing" option on an Embezzle challenge is left out (an embezzler with no Duke always reveals). Side chips L/R in gold/blue beside names; 9 actions on a 5-wide reference card.
+- Confirm challenges (off by default) asks "Challenge NAME?" before a challenge; computer speed and remembered setup already existed.
 - Browser Back: closes an open sheet first, then returns to the previous tab (history entries per tab and sheet).
 - Design pass: the stage gets the space on phone (log shrinks), the stage glows blue whenever the move is yours (CSS `:has()`), game over shows the winner big and orange with the dead action grid hidden (kept in place), hand cards 78x109 on phone when there are 3 or fewer opponents, card subtitles hidden on small cards, laptop setup is wider with bigger fan cards, table setup fits 393px without scrolling, `.btn.small` 40px, `?` has a 42px hit area.
 - Sound & effects section sits between Variants and Your record in Settings; win confetti uses the winner's character colours plus orange/blue/white; "big" moments = you catch a bluff, or your challenged claim holds.
@@ -125,10 +134,11 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - After a friend reloads mid-game, online.js shows them "The server said no — you may not be in this room any more." once, though they rejoin and play on fine. That's in the shared `_online/online.js` (not ours to edit).
 - Table look: reviewer ran 2026-10-20 on the old screenshots; its small fixes are in, the bigger ones are listed under Decisions as Tim's call. Card proportions 63x88 are from sleeve listings (reasoned).
 - Weird-situation pass: page left in the background for 10 minutes, Firestore dropping mid-game, AFK / host leaving online, and the "finished room with no winner" guard were not run (reasoned).
+- Factions online with real people (node online test + engine stand-in test only); Factions + Inquisitor together only run in node tests; Hard's search speed under Factions on a phone.
 - Rule edge: 2-player-variant coin split (GameRules says both 1 coin).
 - Visibility pass: with 6 players on a phone, opponents' cards stay 34-36 px wide (lost-card names ~7 px); the height is the limit because the middle keeps room for any question so nothing jumps. Tap a seat for the 112 px close-up. Laptop Hint/Quit stay small (Tim's call, see Decisions).
 
 ## Rejected / parked
 - ~~Win-probability meter~~ heavy on phone; claim odds answer the real question.
-- ~~Reformation/Anarchy expansions~~ separate rule sets.
+- Reformation was parked here; built as the "Factions" variant on 2026-10-28 (manager's brief). ~~Anarchy expansion~~ still parked: separate rule set.
 - ~~"Call it" trainer~~ parked; overlaps Review.

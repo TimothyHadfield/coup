@@ -18,12 +18,15 @@
   const FALLBACK_COLORS = { Duke: '#9b6bd6', Assassin: '#4a4f5c', Captain: '#4f8fe0', Ambassador: '#48b07a', Contessa: '#d9534f', Inquisitor: '#3fa3a8' };
   const COLORS = (Art && Art.COLORS) || FALLBACK_COLORS;
   const SPEED = { slow: 1500, normal: 850, fast: 380 };
-  const VERB = { income: 'takes Income', foreign_aid: 'takes Foreign aid', tax: 'takes Tax', steal: 'steals from', assassinate: 'assassinates', exchange: 'exchanges', examine: 'examines', coup: 'launches a Coup on' };
-  const WHAT = { tax: 'to take 3 coins', steal: 'to steal 2 coins', assassinate: 'to kill a card', exchange: 'to swap cards', examine: 'to look at a card' };
+  const VERB = { income: 'takes Income', foreign_aid: 'takes Foreign aid', tax: 'takes Tax', steal: 'steals from', assassinate: 'assassinates', exchange: 'exchanges', examine: 'examines', coup: 'launches a Coup on', convert: 'converts', embezzle: 'embezzles the Almshouse' };
+  const WHAT = { tax: 'to take 3 coins', steal: 'to steal 2 coins', assassinate: 'to kill a card', exchange: 'to swap cards', examine: 'to look at a card', embezzle: "to take the Almshouse's coins" };
+  // Factions variant: the two sides (0 / 1 in the engine)
+  const SIDE = ['Loyalist', 'Reformist'];
+  const facChip = (side) => (side === 0 || side === 1 ? `<b class="fac f${side}" title="${SIDE[side]}" aria-label="${SIDE[side]}">${SIDE[side][0]}</b>` : '');
 
   // ------------------------------------------------------------------ store
   const DEFAULTS = {
-    settings: { speed: 'normal', showOdds: true, peek: false, inquisitor: false, twoDeal: false, bluff: 0.3, opps: 3, level: 'medium' },
+    settings: { speed: 'normal', showOdds: true, peek: false, inquisitor: false, twoDeal: false, factions: false, confirmChallenge: false, bluff: 0.3, opps: 3, level: 'medium' },
     stats: { easy: { g: 0, w: 0 }, medium: { g: 0, w: 0 }, hard: { g: 0, w: 0 } },
     game: null, lastWinner: null, table: null, tableArchive: [], tab: 'play',
   };
@@ -74,13 +77,14 @@
   }
   // The Treasury: a loose heap in the middle that shrinks as players take coins (50 coins in the box).
   function treasuryHTML(s) {
-    const left = Math.max(0, 50 - s.players.reduce((a, p) => a + p.coins, 0));
+    const left = Math.max(0, 50 - s.players.reduce((a, p) => a + p.coins, 0) - (s.reserve || 0));
     const n = Math.min(16, Math.ceil(left / 3));
     const coins = Array.from({ length: n }, (_, i) => {
       const j = TK ? TK.jitter('treasury', i, { off: 13, rot: 40 }) : { x: 0, y: 0, r: 0 };
       return `<i class="tbl-coin" style="left:calc(50% + ${j.x * 1.4}px);top:calc(50% + ${j.y}px);rotate:${j.r}deg;z-index:${i}"></i>`;
     }).join('');
-    return `<div class="treasury" aria-label="Treasury, ${left} coins">${coins}</div>`;
+    const alms = s.rules && s.rules.factions ? `<span class="alms" aria-label="Almshouse, ${s.reserve || 0} coins">Almshouse <b>${s.reserve || 0}</b></span>` : '';
+    return `<div class="treasury" aria-label="Treasury, ${left} coins">${coins}${alms}</div>`;
   }
   // The Court deck: a real stack (thicker with more cards) showing the Coup card back.
   function drawCourt(root) {
@@ -321,7 +325,7 @@
     GEN++;
     const st = S();
     let n = 1 + Math.max(1, Math.min(5, st.opps));
-    let rules = { inquisitor: st.inquisitor, twoPlayerDeal: st.twoDeal && n === 2 };
+    let rules = { inquisitor: st.inquisitor, twoPlayerDeal: st.twoDeal && n === 2, factions: !!st.factions };
     let first = store.lastWinner != null && store.lastWinner < n ? store.lastWinner : -1;   // last game's winner starts
     let seed = (Math.random() * 2 ** 31) >>> 0, level = st.level;
     if (how.daily) { n = DAILY.players; rules = {}; first = -1; level = DAILY.level; seed = Profile ? Profile.daily.seed(how.daily, 'coup') : seed; }
@@ -449,8 +453,11 @@
       case 'action':
         if (e.action === 'coup') add('coins', e.p, () => { coinFx(e.p, 7, false); FX.pop(seatEl(e.target)); });
         else if (e.action === 'assassinate') add('whoosh', e.p, () => { coinFx(e.p, 3, false); FX.pop(seatEl(e.target)); });
-        else if (e.claim) add('cardSlide', e.p, () => FX.pop(seatEl(e.p)));
+        else if (e.action === 'convert') add('coin', e.p, () => { coinFx(e.p, e.n || 1, false); FX.pop(seatEl(e.target)); });
+        else if (e.claim || e.denies) add('cardSlide', e.p, () => FX.pop(seatEl(e.p)));
         break;
+      case 'reveal': add('cardFlip', e.p, () => FX.pop(seatEl(e.p))); add('shuffle', e.p, () => toDeck(e.p, e.chars.length)); break;
+      case 'convert': add('cardSlide', e.target, () => FX.pop(seatEl(e.target))); break;
       case 'block': add('block', e.p, () => FX.pop(seatEl(e.p))); break;
       case 'challenge': {
         const big = (e.by === ME && !e.truth) || (e.of === ME && e.truth);
@@ -536,7 +543,7 @@
     const now = Date.now();
     for (const e of evs) {
       let txt = null, p = e.p;
-      if (e.t === 'action') txt = E.ACTIONS[e.action].label + (e.claim ? ` (${e.claim})` : '');
+      if (e.t === 'action') txt = E.ACTIONS[e.action].label + (e.claim ? ` (${e.claim})` : e.denies ? ' (no Duke)' : '');
       else if (e.t === 'block') txt = 'Block: ' + e.char;
       else if (e.t === 'challenge') { txt = 'Challenge!'; p = e.by; }
       else if (e.t === 'prove') txt = 'Shows ' + e.char;
@@ -597,11 +604,12 @@
     const char = pd.kind === 'challenge' ? pd.char : E.actionDef(G.s, pd.action).claim;
     if (!char) return null;
     const post = posteriorNow();
-    return post && post[p] ? post[p].has[char] : null;
+    if (!post || !post[p]) return null;
+    return pd.denies ? 1 - post[p].has[char] : post[p].has[char];   // Embezzle claims NO Duke
   }
 
   // "You takes" -> "You take", "Ava blocks You" -> "Ava blocks you", "You's" -> "Your"
-  const FIRST = { takes: 'take', steals: 'steal', assassinates: 'assassinate', exchanges: 'exchange', examines: 'examine', launches: 'launch', blocks: 'block', challenges: 'challenge', shows: 'show', loses: 'lose', is: 'are', gets: 'get', swaps: 'swap', makes: 'make', lets: 'let' };
+  const FIRST = { takes: 'take', steals: 'steal', assassinates: 'assassinate', exchanges: 'exchange', examines: 'examine', launches: 'launch', converts: 'convert', embezzles: 'embezzle', blocks: 'block', challenges: 'challenge', shows: 'show', loses: 'lose', is: 'are', gets: 'get', swaps: 'swap', makes: 'make', lets: 'let' };
   function logLine(e, s) {
     const l = logLine3(e, s);
     if (l) l.txt = l.txt.replace(/^You's /, 'Your ').replace(/^You (\w+)/, (m, w) => 'You ' + (FIRST[w] || w)).replace(/(\S) You(?=\W|$)/g, '$1 you');
@@ -611,16 +619,19 @@
     const nm = (i) => (i === ME ? 'You' : s.players[i].name);
     switch (e.t) {
       case 'action': {
+        if (e.action === 'convert') return { txt: e.target === e.p ? `${nm(e.p)} pays 1 to change sides` : `${nm(e.p)} pays 2 to convert ${nm(e.target)}`, me: e.p === ME || e.target === ME };
         const tg = e.target >= 0 ? ' ' + nm(e.target) : '';
-        return { txt: `${nm(e.p)} ${VERB[e.action]}${tg}${e.claim ? ` (${e.claim})` : ''}`, me: e.p === ME || e.target === ME };
+        return { txt: `${nm(e.p)} ${VERB[e.action]}${tg}${e.claim ? ` (${e.claim})` : e.denies ? ' (no Duke)' : ''}`, me: e.p === ME || e.target === ME };
       }
       case 'block': return { txt: `${nm(e.p)} blocks with ${e.char}`, me: e.p === ME || e.actor === ME };
       case 'noblock': return null;
-      case 'challenge': return { txt: `${nm(e.by)} challenges ${nm(e.of)}: ${e.truth ? 'it was true' : 'caught a bluff!'}`, me: e.by === ME || e.of === ME, big: true };
+      case 'challenge': return { txt: `${nm(e.by)} challenges ${nm(e.of)}: ${e.truth ? 'it was true' : e.denies ? 'caught holding a Duke!' : 'caught a bluff!'}`, me: e.by === ME || e.of === ME, big: true };
+      case 'reveal': return { txt: `${nm(e.p)} shows no Duke (${e.chars.join(' + ')}), shuffles them in, draws anew`, me: e.p === ME };
+      case 'convert': return { txt: `${nm(e.target)} ${e.target === ME ? 'are' : 'is'} now ${SIDE[e.side]}`, me: e.target === ME };
       case 'prove': return { txt: `${nm(e.p)} shows ${e.char}, shuffles it in, draws anew`, me: e.p === ME };
       case 'lose': return { txt: `${nm(e.p)} loses ${e.char}`, me: e.p === ME, big: true };
       case 'out': return { txt: `${nm(e.p)} is out`, me: e.p === ME, big: true };
-      case 'gain': return null;
+      case 'gain': return e.action === 'embezzle' ? { txt: `${nm(e.p)} takes ${e.n} from the Almshouse`, me: e.p === ME } : null;
       case 'steal': return { txt: `${nm(e.p)} takes ${e.n} from ${nm(e.target)}`, me: e.p === ME || e.target === ME };
       case 'refund': return { txt: `${nm(e.p)} gets ${e.n} coins back`, me: e.p === ME };
       case 'fail': return e.blocked ? { txt: `${nm(e.p)}'s ${E.ACTIONS[e.action].label} is blocked`, me: e.p === ME } : null;
@@ -675,13 +686,13 @@
       const bars = post && post[i] ? `<div class="bars" aria-label="odds">${chars.map((c) => `<div class="b" title="${c} ${pctTxt(post[i].has[c])}"><i style="height:${Math.round(post[i].has[c] * 100)}%;background:${COLORS[c]}"></i></div>`).join('')}</div>` : '';
       const sy = says[i] && says[i].until > now ? `<div class="say">${esc(says[i].text)}</div>` : '';
       const isTurn = !G.over && s.ctx && s.ctx.actor === i;
-      const targetable = myTurn && pd.kind === 'action' && selAction && isAlive;
+      const targetable = myTurn && pd.kind === 'action' && selAction && isAlive && E.legalActions(s, ME).some((l) => l.action === selAction && l.target === i);
       const targeted = s.ctx && s.ctx.target === i && s.ctx.action;
       const seatInfo = G.online && SNAP && SNAP.seats ? SNAP.seats[i] : null;
       const away = seatInfo && seatInfo.kind === 'human' && !seatInfo.online ? ' <small class="away">away</small>' : '';
       const oi = i < ME ? i : i - 1;   // seat order round the far side of the table
       return `<div class="opp ${isTurn ? 'turn' : ''} ${isAlive ? '' : 'out'} ${targetable ? 'targetable' : ''} ${targeted ? 'targeted' : ''}" data-opp="${i}" style="--arc:${arc[oi] || 0}">
-        ${sy}<div class="top"><span class="nm">${esc(pl.name)}${away}</span>${coinPile(pl.coins)}</div>
+        ${sy}<div class="top">${s.rules.factions ? facChip(pl.side) : ''}<span class="nm">${esc(pl.name)}${away}</span>${coinPile(pl.coins)}</div>
         <div class="mid"><div class="cards">${cards}</div>${bars}</div></div>`;
     }).join('');
 
@@ -701,13 +712,15 @@
     const canHint = myTurn && !G.over;
     // --- actions
     const legal = myTurn && pd.kind === 'action' ? E.legalActions(s, ME) : [];
-    const acts = E.ACTION_ORDER.filter((a) => a !== 'examine' || s.rules.inquisitor).map((a) => {
+    const acts = E.actionsInPlay(s).map((a) => {
       const def = E.actionDef(s, a);
       const ok = legal.some((l) => l.action === a);
       const mine = E.hiddenChars(me);
       let sub = def.claim ? def.claim : a === 'coup' ? '7 coins' : a === 'foreign_aid' ? '+2' : '+1 safe';
       if (a === 'assassinate') sub = '3 · Assassin';
-      const bluff = def.claim && !mine.includes(def.claim);
+      if (a === 'convert') sub = '1 you · 2 other';
+      if (a === 'embezzle') sub = 'No Duke';
+      const bluff = (def.claim && !mine.includes(def.claim)) || (def.denies && mine.includes(def.denies));
       const hinted = hint && hint.d && hint.d.action === a;
       return `<button class="act ${selAction === a ? 'sel' : ''} ${hinted ? 'hinted' : ''}" data-act="${a}" ${ok ? '' : 'disabled'}>
         <b>${esc(def.label)}</b><small class="${bluff && ok ? 'bluff' : ''}">${esc(bluff && ok ? sub + ' · bluff' : sub)}</small></button>`;
@@ -722,9 +735,9 @@
       <button class="log tlog" data-log="1" aria-label="Game log">${myTurn && !G.over && hint && hint.why && pd.kind !== 'exchange' && pd.kind !== 'pick' ? `<div class="why">Hint: ${esc(hint.why)}</div>` : ''}${logHTML(s)}</button>
       <div class="stage"><div class="court"><div class="court-deck" aria-label="Court deck"></div></div><div class="prompt">${stage}</div>${treasuryHTML(s)}</div>
       <div class="me-row"><div class="cards">${myCards}</div>${coinPile(me.coins)}
-        <div class="side">
+        <div class="side">${s.rules.factions ? `<div class="fac-me f${me.side}">${facChip(me.side)}${SIDE[me.side]}</div>` : ''}
           <div class="row">${canHint ? '<button class="btn small" data-hint="1">Hint</button>' : ''}${!G.online && !G.daily && !G.over && undoStack.length ? '<button class="btn small" data-undo="1" aria-label="Undo your last move">Undo</button>' : ''}<button class="btn small ghost" data-quit="1">${G.online ? 'Leave' : G.over ? 'Close' : 'Quit'}</button></div></div></div>
-      <div class="actions refcard">${acts}</div>
+      <div class="actions refcard${s.rules.factions ? ' many' : ''}">${acts}</div>
     </div>${side}</div></div>`;
     fitSeats(root);
     drawCourt(root);
@@ -750,7 +763,7 @@
     const chars = s.rules.chars;
     const odds = post && post[i] ? `<table class="oddsT"><tr>${chars.map((c) => `<th><span class="chip" style="background:${COLORS[c]}"></span>${c.slice(0, 4)}</th>`).join('')}</tr>
       <tr>${chars.map((c) => `<td style="color:${scale(post[i].has[c])}">${pctTxt(post[i].has[c])}</td>`).join('')}</tr></table>` : '';
-    sheet(`<h3><span class="seat-h">${esc(pl.name)} ${coinPile(pl.coins)}</span><button class="btn small ghost" data-s="x">Close</button></h3>
+    sheet(`<h3><span class="seat-h">${s.rules.factions ? facChip(pl.side) : ''}${esc(pl.name)} ${coinPile(pl.coins)}</span><button class="btn small ghost" data-s="x">Close</button></h3>
       <div class="body"><div class="choose seat-cards">${cards}</div>${odds}</div>`, () => closeSheet());
   }
 
@@ -787,11 +800,20 @@
     const H = (k) => (hint && hint.d && hint.d[k]);
     switch (pd.kind) {
       case 'action':
-        if (selAction) return `<div class="what"><div class="txt"><div class="t1">${esc(E.ACTIONS[selAction].label)}: pick a player</div><div class="t2">Tap someone above.</div></div></div>
+        if (selAction === 'convert') {
+          const self = E.legalActions(s, ME).some((l) => l.action === 'convert' && l.target === ME);
+          return `<div class="what"><div class="txt"><div class="t1">Convert: whose side?</div><div class="t2">Yourself for 1 coin, or tap someone above for 2.</div></div></div>
+          <div class="acts">${self ? `<button class="btn warm" data-convself="1">Me · become ${SIDE[1 - s.players[ME].side]}</button>` : ''}<button class="btn" data-cancel="1">Cancel</button></div>${why}`;
+        }
+        if (selAction) return `<div class="what"><div class="txt"><div class="t1">${esc(E.ACTIONS[selAction].label)}: pick a player</div><div class="t2">${s.rules.factions && E.ACTIONS[selAction].target ? 'Tap someone above (not your own side).' : 'Tap someone above.'}</div></div></div>
           <div class="acts"><button class="btn" data-cancel="1">Cancel</button></div>${why}`;
         return `<div class="what"><div class="txt"><div class="t1">Your turn</div><div class="t2">${pd.mustCoup ? '10+ coins: you must Coup.' : 'Pick an action below.'}</div></div></div>${why}`;
       case 'challenge': {
         const p = claimOddsNow();
+        if (pd.denies) {
+          return `<div class="what"><div class="txt"><div class="t1">${esc(nm(pd.claimant))} claims no Duke</div><div class="t2">${esc(`to take the Almshouse's ${s.reserve || 0}`)}</div></div>${pctBox(p)}</div>
+          <div class="acts"><button class="btn danger ${H('challenge') === true ? 'hinted' : ''}" data-ch="1">Challenge</button><button class="btn ${hint && hint.d && hint.d.challenge === false ? 'hinted' : ''}" data-ch="0">Allow</button></div>${why}`;
+        }
         const blockTxt = pd.about === 'block' ? `blocks ${pd.actor === ME ? 'your' : nm(pd.actor) + "'s"} ${E.ACTIONS[pd.action].label}` : (WHAT[pd.action] || '') + (pd.target === ME ? ' from you' : pd.target >= 0 && pd.action !== 'tax' ? ' · ' + nm(pd.target) : '');
         return `<div class="what"><div class="txt"><div class="t1">${esc(nm(pd.claimant))} claims ${esc(pd.char)}</div><div class="t2">${esc(blockTxt)}</div></div>${pctBox(p)}</div>
           <div class="acts"><button class="btn danger ${H('challenge') === true ? 'hinted' : ''}" data-ch="1">Challenge</button><button class="btn ${hint && hint.d && hint.d.challenge === false ? 'hinted' : ''}" data-ch="0">Allow</button></div>${why}`;
@@ -926,7 +948,7 @@
       const room = await netRoom();
       const n = 1 + Math.max(1, Math.min(5, S().opps));
       const seats = [{ kind: 'human', name: netName() }].concat(Array.from({ length: n - 1 }, () => 'empty'));
-      const r = await room.createRoom({ name: netName(), seats, options: { level: S().level, inquisitor: S().inquisitor, twoDeal: S().twoDeal } });
+      const r = await room.createRoom({ name: netName(), seats, options: { level: S().level, inquisitor: S().inquisitor, twoDeal: S().twoDeal, factions: !!S().factions } });
       if (!r.ok) toast(r.message ? netMsg(r.message) : 'Could not make a room.');
       else { store.netOn = true; save(); closeSheet(); }
     } catch (e) { toast('Online play could not load. Check the connection.'); }
@@ -1009,7 +1031,7 @@
       return `<div class="seatrow"><span class="dot ${st.kind === 'human' && !st.online ? 'off' : st.kind}"></span><span class="nm">${who}</span>${btn}</div>`;
     }).join('');
     const lv = { easy: 'Easy', medium: 'Medium', hard: 'Hard' }[o.level] || 'Medium';
-    const vars = [o.inquisitor ? 'Inquisitor' : '', o.twoDeal && sn.seats.length === 2 ? '2-player deal' : ''].filter(Boolean).join(' · ');
+    const vars = [o.inquisitor ? 'Inquisitor' : '', o.twoDeal && sn.seats.length === 2 ? '2-player deal' : '', o.factions ? 'Factions' : ''].filter(Boolean).join(' · ');
     return `<div class="setup-wrap">
       <div class="panel lobby"><h2>Room code <button class="q" data-help="online" aria-label="How online works">?</button></h2>
         <div class="code">${esc(sn.code || '')}</div>
@@ -1277,10 +1299,12 @@
       <div class="setrow"><div class="k">Computer speed</div>${seg('speed', [['slow', 'Slow'], ['normal', 'Normal'], ['fast', 'Fast']])}</div>
       <div class="setrow"><div class="k">Show odds<small>Card odds on every player</small></div>${sw('showOdds')}</div>
       <div class="setrow"><div class="k">Study mode<small>See the computers' cards while playing</small></div>${sw('peek')}</div>
+      <div class="setrow"><div class="k">Confirm challenges<small>Ask "Sure?" before you challenge</small></div>${sw('confirmChallenge')}</div>
       <div class="setrow"><div class="k">How much people bluff <button class="q" data-help="bluff">?</button><small>Used for every odds number</small></div>${seg('bluff', [[0.15, 'Rarely'], [0.3, 'Some'], [0.5, 'Often']])}</div>
       <div class="label" style="margin:16px 0 4px">Variants</div>
       <div class="setrow"><div class="k">Inquisitor<small>Replaces all 3 Ambassadors</small></div>${sw('inquisitor')}</div>
       <div class="setrow"><div class="k">2-player deal <button class="q" data-help="twodeal">?</button><small>Official setup for 1 opponent</small></div>${sw('twoDeal')}</div>
+      <div class="setrow"><div class="k">Factions <button class="q" data-help="factions">?</button><small>Two sides; Convert and Embezzle</small></div>${sw('factions')}</div>
       <div class="label" style="margin:16px 0 4px">Help</div>
       <div class="setrow"><div class="k">Rules<small>The whole game on one page</small></div><button class="btn small" data-rules="1">Rules</button></div>
       <div class="setrow"><div class="k">Guided first game<small>2 Easy computers, step by step</small></div><button class="btn small" data-tutorial="1">Start</button></div>
@@ -1294,6 +1318,14 @@
     else $('#fxset').previousElementSibling.remove();
   }
 
+  // Videos in the Rules sheet: each id checked with YouTube's oembed (title + channel match), 2026-10-28.
+  const VIDEOS = [
+    { id: 'lPlBDZnxHQA', title: 'Coup - How To Play', by: 'Watch It Played', what: 'the rules' },
+    { id: 'NHLV9BEfAog', title: 'Coup - Shut Up & Sit Down Review', by: 'Shut Up & Sit Down', what: 'what makes it fun' },
+    { id: 'SBf-kE5rAVo', title: 'How to Win at Coup Every Time! | Simple Strategy #13', by: 'StrataGames', what: 'strategy' },
+    { id: '1yX9bwlQk8I', title: 'Coup Reformation Review - with Tom Vasel', by: 'The Dice Tower', what: 'the Factions variant' },
+    { id: 'qy-W3W5togk', title: 'Coup Reformation | Game the Game', by: 'Geek & Sundry', what: 'Factions, played' },
+  ];
   // ------------------------------------------------------------------ rules sheet + guided first game (shared _coach kit)
   function rulesSheet() {
     const row = (c) => `<tr><td><b>${c}</b></td><td>${ABOUT[c][0]}</td><td>${ABOUT[c][1]}</td></tr>`;
@@ -1322,6 +1354,12 @@
           <p>Blocks are claims too, so they can be challenged.</p>` },
         { id: 'end', title: 'Losing cards and the end', short: 'End', html: `<p>When you lose a card you choose which one and turn it face up. With no cards left you are out, and your coins go back to the Treasury.</p>
           <p>The last player with a card face down wins.</p>` },
+        { id: 'factions', title: 'Factions variant', short: 'Factions', html: `<p>Optional (Settings, Variants). From the Reformation expansion.</p>
+          <ul><li>Everyone is a <b>Loyalist</b> or a <b>Reformist</b>, alternating round the table from the starting player.</li>
+          <li>While both sides are still in play, you can't Coup, Assassinate, Steal from or Examine your own side, or block their Foreign aid. Once everyone is on one side, anything goes.</li>
+          <li><b>Convert:</b> pay 1 coin to switch your own side, or 2 to switch someone else's. The coins go to the Almshouse.</li>
+          <li><b>Embezzle:</b> claim you have <i>no</i> Duke and take every coin in the Almshouse. If challenged and you hold a Duke, you lose a card and get nothing. If you don't, you show your cards, shuffle them in and draw new ones, and the challenger loses a card.</li></ul>` },
+        { id: 'videos', title: 'Videos', short: 'Videos', html: `<ul class="rules-videos">${VIDEOS.map((v) => `<li><a href="https://www.youtube.com/watch?v=${v.id}" target="_blank" rel="noopener">${esc(v.title)}</a> <small>${esc(v.by)} · ${esc(v.what)}</small></li>`).join('')}</ul>` },
       ],
     };
   }
@@ -1365,6 +1403,7 @@
     claim: 'This is the chance this player really holds the card they just claimed, using the cards you can see, your own hand, and everything they have claimed or skipped so far.',
     strength: 'Each level played thousands of games against the others with seats rotated, so the numbers are measured, not guessed. Hard plays each choice out against likely hands before it moves; Medium weighs the odds of each claim against what a challenge risks; Easy plays honest and calls bluffs at random. "Beats Easy" is one computer against one Easy. "Wins 3-way" is Hard against one Easy and one Medium, where a fair share is 33%. One against one, Hard beats Medium about 3 games in 4.',
     bluff: 'How often a player who does NOT hold a card still claims it, compared with a player who does. Pick what fits your table; it changes every odds number.',
+    factions: 'From the Reformation expansion. Everyone is a Loyalist or a Reformist, alternating round the table. While both sides are still in play you can\'t Coup, Assassinate, Steal from (or Examine) your own side, or block their Foreign aid. Convert: pay 1 to switch your own side, or 2 to switch someone else\'s; the coins go to the Almshouse. Embezzle: claim you have NO Duke and take everything in the Almshouse. If challenged and you hold a Duke, you lose a card; if not, you show your cards, shuffle them in and draw new ones, and the challenger loses a card. The computers play it too.',
     twodeal: 'The rulebook\'s 2-player setup: each player picks 1 card from a set of all five characters and sets the other 4 aside face down, then gets 1 random card. The deck is only 3 cards.',
     online: 'Make a room and share the 5-letter code. Each seat is a friend or a computer. The host’s browser runs the computers and checks every move, and each player’s cards are only ever sent to that player. If someone drops out, a computer keeps their seat going; reloading the page puts you back in.',
     table: 'Use this with real cards. Record each turn with a few taps; the odds update for every claim. If you add your own cards, the odds count them too. Bluff habits of each name carry over between games.',
@@ -1422,10 +1461,21 @@
         human({ action: a, target: -1 }); return;
       }
       if (ds.cancel) { selAction = null; renderPlay(); return; }
+      if (ds.convself && pd.kind === 'action' && selAction === 'convert') { human({ action: 'convert', target: ME }); return; }
       if (ds.opp != null && pd.kind === 'action' && selAction) {
         const t = +ds.opp;
         if (!E.alive(G.s.players[t])) { fxError(seatEl(t)); return; }
+        if (!E.legalActions(G.s, ME).some((l) => l.action === selAction && l.target === t)) {
+          fxError(seatEl(t));
+          toast(selAction === 'convert' ? 'Converting someone else costs 2 coins.' : 'Same side: you can\'t target them while both sides are in play.');
+          return;
+        }
         human({ action: selAction, target: t }); return;
+      }
+      if (ds.ch === '1' && pd.kind === 'challenge' && S().confirmChallenge) {
+        const who = G.s.players[pd.claimant].name;
+        confirmBox('Challenge ' + who + '?', pd.denies ? 'If they really have no Duke, you lose a card.' : 'If they really have the ' + pd.char + ', you lose a card.', 'Challenge', () => { const q = G && G.s.pending; if (q && q.kind === 'challenge' && isHuman(q.p) && q.claimant === pd.claimant) human({ challenge: true }); });
+        return;
       }
       if (ds.ch != null && pd.kind === 'challenge') { human({ challenge: ds.ch === '1' }); return; }
       if (ds.blk != null && pd.kind === 'block') { human({ block: ds.blk || null }); return; }

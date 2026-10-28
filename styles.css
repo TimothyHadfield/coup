@@ -693,3 +693,39 @@ input[type=text] { background: var(--bg-soft); border: 1px solid var(--line); co
 #tab-play .pf-row .btn .wl { font-size: 12px; color: var(--muted); font-weight: 500; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 #tab-play .pf-row .daily-btn { grid-template-columns: 1fr; }
 #tab-play .me-row .side .row { flex-wrap: wrap; justify-content: flex-end; }
+
+/* ---- wave 3 (2026-10-28): Factions variant (side chips, Almshouse), first-visit offer above the tab bar */
+/* the shared coach kit's "New to Coup?" card sits at the top, over the decorative card fan, so it covers
+   neither the tab bar nor the Deal button (centred on phones, top-right corner on laptops) */
+.coach-offer { top: calc(10px + env(safe-area-inset-top)); bottom: auto; }
+@media (min-width: 900px) {
+  .coach-offer { top: 16px; right: 16px; left: auto; transform: none; }
+  .coach-offer.enter { animation-name: coup-offer-in; }
+}
+@keyframes coup-offer-in { from { opacity: 0; transform: translateY(-10px); } }
+.fac { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 16px; height: 18px; font-size: 10.5px; font-weight: 800; line-height: 1;
+  border-radius: 3px 3px 8px 8px; color: #1b1408; box-shadow: 0 1px 2px rgba(0, 0, 0, .5), inset 0 1px 0 rgba(255, 255, 255, .35); }
+.fac.f0 { background: linear-gradient(#f6d27a, #c9962e); }
+.fac.f1 { background: linear-gradient(#9cc4ff, #4f86d8); }
+#tab-play .opp .top .fac { align-self: center; }
+.fac-me { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; font-weight: 700; color: #f6efdc; text-shadow: 0 1px 2px rgba(0, 0, 0, .6); }
+.seat-h .fac { width: 20px; height: 22px; font-size: 12px; }
+.treasury .alms { position: absolute; left: 50%; bottom: -8px; translate: -50% 0; z-index: 30; white-space: nowrap; font-size: 10.5px; line-height: 15px; padding: 0 5px; border-radius: 4px;
+  color: #f6efdc; background: linear-gradient(#3b2a1a, #24180d); border: 1px solid #7a5a2e; }
+.treasury .alms b { color: var(--warm); }
+/* 10 actions: five across (four across on the narrowest phones) */
+.actions.refcard.many { grid-template-columns: repeat(5, 1fr); }
+.refcard.many .act:nth-child(n) { box-shadow: inset -1px 0 0 rgba(90, 60, 25, .2), inset 0 -1px 0 rgba(90, 60, 25, .2); }
+.refcard.many .act:nth-child(5n) { box-shadow: inset 0 -1px 0 rgba(90, 60, 25, .2); }
+.refcard.many .act:nth-child(n+6) { box-shadow: inset -1px 0 0 rgba(90, 60, 25, .2); }
+.refcard.many .act:nth-child(n+6):last-child, .refcard.many .act:nth-child(10) { box-shadow: none; }
+@media (max-width: 899px) { .refcard.many .act b { font-size: 12.5px; } .refcard.many .act small { font-size: 10px; } .refcard.many .act { padding: 0 1px; } }
+@media (max-width: 360px) {
+  .actions.refcard.many { grid-template-columns: repeat(4, 1fr); }
+  .refcard.many .act:nth-child(n) { box-shadow: inset -1px 0 0 rgba(90, 60, 25, .2), inset 0 -1px 0 rgba(90, 60, 25, .2); }
+  .refcard.many .act:nth-child(4n) { box-shadow: inset 0 -1px 0 rgba(90, 60, 25, .2); }
+}
+.rules-videos { margin: 0; padding-left: 18px; }
+.rules-videos li { margin: 4px 0; }
+.rules-videos small { color: #6b5a44; }
+.rules-videos a { color: #1f5fa8; }

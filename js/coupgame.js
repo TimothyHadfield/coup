@@ -13,7 +13,7 @@
     minSeats: 2,
     maxSeats: 6,
 
-    // options: { level: 'easy'|'medium'|'hard', inquisitor, twoDeal }
+    // options: { level: 'easy'|'medium'|'hard', inquisitor, twoDeal, factions }
     setup(n, options, rng, seats) {
       options = options || {};
       rng = rng || Math.random;
@@ -22,7 +22,7 @@
       const s = E.newGame({
         names,
         seed: (Math.floor(rng() * 2 ** 31) >>> 0) || 1,
-        rules: { inquisitor: !!options.inquisitor, twoPlayerDeal: !!options.twoDeal && n === 2 },
+        rules: { inquisitor: !!options.inquisitor, twoPlayerDeal: !!options.twoDeal && n === 2, factions: !!options.factions },
         first: -1,
       });
       s.level = ['easy', 'medium', 'hard'].includes(options.level) ? options.level : 'medium';
@@ -92,10 +92,10 @@
       if (pub.reveal) cards = pub.reveal[i].map((c) => ({ c: c.c, dead: c.dead }));
       else if (i === me && mine) cards = mine.myCards.map((c) => ({ c: c.c, dead: c.dead }));
       else cards = Array.from({ length: p.hidden }, () => ({ c: null, dead: false })).concat(p.dead.map((c) => ({ c, dead: true })));
-      return { name: p.name, coins: p.coins, cards, knownDeck: [], knownOut: [], peeks: [] };
+      return { name: p.name, coins: p.coins, side: p.side, cards, knownDeck: [], knownOut: [], peeks: [] };
     });
     return {
-      n: pub.n, rules: pub.rules, players, events: pub.events || [], turn: pub.turn, turnNo: pub.turnNo || 0,
+      n: pub.n, rules: pub.rules, players, events: pub.events || [], turn: pub.turn, turnNo: pub.turnNo || 0, reserve: pub.reserve || 0,
       pending: (mine && mine.pending) || pub.pending || null, ctx: pub.ctx, winner: pub.winner,
       deck: { length: pub.deckSize }, out: [], level: pub.level,
     };
