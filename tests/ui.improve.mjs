@@ -162,6 +162,44 @@ const tapCoupOnAva = async (page) => {
   ok(page.errors.length === 0, 'no page errors (tutorial)', page.errors);
   await ctx.close();
 }
+// 8. a game left behind "Resume last game" (as after an online room) still counts: Deal = a loss; Daily resumes, never restarts
+{
+  const { ctx, page } = await fresh();
+  await nearWin(page, { level: 'easy' });
+  await page.tap('#tab-play [data-act="income"]');
+  await page.waitForFunction(() => window.__coup.G.moved);
+  await page.waitForTimeout(400);
+  await page.evaluate(() => window.__coup.park());
+  await page.waitForSelector('#tab-play [data-resume]');
+  await page.tap('#tab-play [data-new]'); await page.waitForTimeout(400);
+  let st = await stats(page);
+  ok(st.games === 1 && st.losses === 1, 'Deal over a parked game you moved in = 1 loss', { g: st.games, l: st.losses });
+  await page.tap('#tab-play [data-quit]'); await page.waitForTimeout(200);
+  const y = await page.$('#overlay [data-s="yes"]'); if (y) await y.tap();
+  await page.waitForTimeout(300);
+  await page.tap('#tab-play [data-daily]');
+  await page.waitForFunction(() => window.__coup.G && window.__coup.G.daily);
+  const id1 = await page.evaluate(() => window.__coup.G.id);
+  // answer any question with Allow until it is your turn, then take Income
+  for (let k = 0; k < 120; k++) {
+    const pd = await page.evaluate(() => { const g = window.__coup.G; return g.s.pending && g.s.pending.p === 0 ? g.s.pending.kind : ''; });
+    if (pd === 'action') break;
+    if (pd) await page.evaluate(() => { const a = document.querySelector('#tab-play [data-ch="0"], #tab-play [data-blk=""]'); if (a) a.click(); });
+    await page.waitForTimeout(250);
+  }
+  await page.waitForTimeout(450);
+  await page.tap('#tab-play [data-act="income"]');
+  await page.waitForFunction(() => window.__coup.G.moved);
+  await page.evaluate(() => window.__coup.park());
+  await page.waitForTimeout(300);
+  await page.tap('#tab-play [data-daily]'); await page.waitForTimeout(400);
+  const g2 = await page.evaluate(() => ({ id: window.__coup.G && window.__coup.G.id, moved: window.__coup.G && window.__coup.G.moved }));
+  ok(g2.id === id1 && g2.moved, 'Daily button resumes the parked Daily instead of a fresh retry', { id1, g2 });
+  st = await stats(page);
+  ok(st.games === 1, 'resuming the Daily records nothing extra', st.games);
+  ok(page.errors.length === 0, 'no page errors (parked game)', page.errors);
+  await ctx.close();
+}
 // 7. rules sheet from Settings, Back closes it
 {
   const { ctx, page } = await fresh();

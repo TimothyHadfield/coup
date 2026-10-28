@@ -279,18 +279,22 @@
     const cardsLeft = s.players[ME].cards.filter((c) => !c.dead).length;
     return { players: s.players.length, claims, bluffs, bluffsOk, caught, cardsLeft, oddsOff: !S().showOdds };
   }
-  function recordProfile(iWon) {
-    if (!Profile || !G || G.online || G.tutorial || G.recorded) return;
-    G.recorded = true; save();
-    const r = G.helped ? { mode: 'help', level: null, won: !!iWon } : { mode: 'computer', level: G.level, won: !!iWon };
-    r.extra = gameExtra(G.s);
-    if (G.daily) { r.daily = true; r.date = G.daily; }
+  function recordProfile(iWon, g) {
+    g = g || G;
+    if (!Profile || !g || g.online || g.tutorial || g.recorded) return;
+    g.recorded = true; save();
+    const r = g.helped ? { mode: 'help', level: null, won: !!iWon } : { mode: 'computer', level: g.level, won: !!iWon };
+    r.extra = gameExtra(g.s);
+    if (g.daily) { r.daily = true; r.date = g.daily; }
     try { Profile.recordResult(r); } catch (e) { /* stats never break the game */ }
   }
-  // Quitting (or dealing again) after your first move counts as a loss.
+  // Quitting (or dealing again) after your first move counts as a loss. The game may be off the table
+  // (G is null after an online room) but still saved, waiting behind "Resume last game".
+  const localGame = () => (G ? (G.online ? null : G) : store.game || null);
+  const movedIn = (g) => !!(g && !g.online && !g.over && !g.counted && g.moved);
   function recordQuit() {
-    if (!G || G.online || G.over || G.counted || !G.moved) return;
-    recordProfile(false);
+    const g = localGame();
+    if (movedIn(g)) recordProfile(false, g);
   }
   function undo() {
     if (!G || G.online || G.daily || G.over || !undoStack.length) return;
@@ -313,7 +317,7 @@
   function newGame(how) {
     how = how || {};
     if (COACH) COACH.closeOffer();      // a deal answers "New to Coup?" with no
-    if (G && !G.online) recordQuit();   // leaving a game you had played in counts as a loss
+    recordQuit();                       // leaving a game you had played in counts as a loss
     GEN++;
     const st = S();
     let n = 1 + Math.max(1, Math.min(5, st.opps));
@@ -1048,8 +1052,12 @@
     const day = Profile.daily.date();
     if (G && G.online) { Profile.closePanel(); toast('Leave the online room first.'); return; }
     if (G && G.daily === day && !G.over) { Profile.closePanel(); setTab('play'); return; }
+    if (!G && store.game && store.game.daily === day && !store.game.over) {   // today's Daily, paused behind "Resume"
+      Profile.closePanel(); if (store.tab !== 'play') setTab('play');
+      G = store.game; renderPlay(); run(++GEN); return;
+    }
     if (Profile.daily.played(day)) { Profile.openPanel({ tab: 'daily' }); return; }
-    if (G && !G.over && G.moved) { Profile.closePanel(); toast('Finish or quit this game first.'); return; }
+    if (movedIn(localGame())) { Profile.closePanel(); toast('Finish or quit this game first.'); return; }
     Profile.closePanel();
     if (store.tab !== 'play') setTab('play');
     newGame({ daily: day });
@@ -1340,6 +1348,7 @@
   function startTutorial() {
     if (!COACH || !tour) return;
     if (G && G.online) { toast('Leave the online room first.'); return; }
+    if (movedIn(localGame())) { toast('Finish or quit this game first.'); return; }
     closeSheet();
     if (store.tab !== 'play') setTab('play');
     tour.reset();
@@ -1588,5 +1597,6 @@
     netRoom().then((room) => room.resume()).then((ok) => { if (!ok) { NET = null; store.netOn = false; save(); renderPlay(); } })
       .catch(() => { NET = null; store.netOn = false; save(); renderPlay(); });
   }
-  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, netLog: NETLOG, get revived() { return revived; }, newGame, step: (d) => human(d), undo, get undoCount() { return undoStack.length; }, startDaily, startTutorial, get tour() { return tour; } };
+  window.__coup = { get G() { return G; }, get SNAP() { return SNAP; }, store: () => store, netLog: NETLOG, get revived() { return revived; }, newGame, step: (d) => human(d), undo, get undoCount() { return undoStack.length; }, startDaily, startTutorial, get tour() { return tour; },
+    park: () => { GEN++; G = null; renderPlay(); } };   // tests: what leaving an online room does to a local game
 })();
