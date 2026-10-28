@@ -1,7 +1,7 @@
 # Coup — progress
 
 ## START HERE
-Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-27 (visibility pass: `tests/ui.visibility.mjs`; before that the weird-situation pass `tests/ui.edge.mjs`, the real-table look, sounds/animations and the visual design pass).
+Read this, then `CLAUDE.md`, then `docs/rules-check.md`. Last updated: 2026-10-27 (improve pass: Hard look-ahead, My stats / Daily / Undo / guided game / Rules / home-screen install, `tests/ui.improve.mjs`; before that the visibility pass, the weird-situation pass, the real-table look, sounds/animations and the visual design pass).
 
 ## Goal right now
 Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at it on his phone.
@@ -21,6 +21,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 | Real-table look (2026-10-20) | Done: dark wood table, Court deck stack + Treasury coin heap in the middle, opponents round the far side on an arc with brass name plates, your 2 cards tilted in front of you with a real coin pile, actions on a cream reference card; cards fly from the deck when dealt / returned. Kit = `css/table.css` + `js/tablekit.js` (copies of `../_table/`, never edit); our CSS is the "table look" block at the end of `styles.css` |
 | Weird-situation pass (2026-10-20) | Done: 53 scenarios, 5 failed and fixed (table below); `tests/ui.edge.mjs` re-runs the 41 browser ones |
 | Visibility pass (2026-10-27) | Done: opponents' cards sized to fill the far side (`fitSeats` in `js/app.js`, worked out once per screen size + player count so nothing jumps), tap a seat for a close-up (`openSeat`), phone questions use the full table width, reference card compacts when a question needs room (`fitTight`), 320 px fits its column; CSS "visibility pass" block at the end of `styles.css`; `tests/ui.visibility.mjs` (14 checks) |
+| Improve pass (2026-10-27) | Done: Hard looks ahead (`js/ai.js` "Hard: look ahead": samples likely hands from the odds, plays each top choice 4 turns out with Medium-style play, 600 ms cap); My stats + achievements + Daily game (`_profile` 1.1.0), Undo vs the computer, guided first game + Rules sheet (`_coach`), home-screen install + offline (`_pwa` 1.2.0, `tests/pwa-check.json`, 18/18); `tests/ui.improve.mjs` (33 checks) |
 | Live | https://timothyhadfield.github.io/coup/ |
 
 **Weird-situation pass** (`node tests/ui.edge.mjs <url> <outDir> [ids]`, WebKit; rules ones in node):
@@ -56,7 +57,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 | Table tab: turn saved / Undo / winner | `place` / `slide` / `win`, `lose` (or `big` when watching) | — |
 | Any button | `tap` (fx.js, "Button clicks" switch) | — |
 
-**Measured strength** (`data/stats.json`, `node tools/hands.js`, 2026-10-20 after the loop fix, seats rotated): Hard vs Easy 83% (1000 games), Medium vs Easy 74%, Hard vs Medium 47/53 (a 2000-game recheck gave 51/49: head-to-head they're even), three-way Easy/Medium/Hard 11/33/55% (900 games). Seat data: first player 47% (2p), 35% (3p, fair 33%), 25% (4p), 25% (5p), 19% (6p). Avg turns 2p 12 · 4p 35 · 6p 57. Best start: Duke+Duke 70% in 3p Hard games; worst Captain+Contessa 20%.
+**Measured strength** (`node tools/ladder.js` writes `data/stats.json` "strength", 2026-10-27, seats rotated): Hard vs Medium 75% (was 47-53%), Hard vs Easy 77% (was 83%: its look-ahead assumes Medium-style opponents), Medium vs Easy 74% (1000 games each); three-way Easy/Medium/Hard 17/24/59% (900); Hard vs 3 Medium 64% (300, fair 25%; was 28%); Hard vs 5 Medium 47% (150, fair 17%); Medium vs 3 Easy 43% (fair 25%). Ratings in My stats: Easy 1200, Medium 1385, Hard 1577 (from these). Not predictable: from the same deal Hard opened 2+ different ways in 33 of 40 deals (12 tries each). Hand/seat data below is from the old Hard (`tools/hands.js`, 2026-10-20): Seat data: first player 47% (2p), 35% (3p, fair 33%), 25% (4p), 25% (5p), 19% (6p). Avg turns 2p 12 · 4p 35 · 6p 57. Best start: Duke+Duke 70% in 3p Hard games; worst Captain+Contessa 20%.
 
 ## Standing instructions (Tim's words)
 - "build regular play online with a computer or other online players for all the games and their common varients that match exactly the play of the in-person game."
@@ -88,6 +89,10 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - `css/table.css` + `js/tablekit.js` are byte copies of `../_table/table.css` / `table.js` (renamed because `js/table.js` is our Table tab). Recopy, never edit.
 - The old `.coin i` rules are scoped `:not(.pile)`; without that they flatten the kit's real coins.
 - Deal animation: cards not yet dealt are tracked in the `undealt` set ("seat:card") and re-hidden after every re-render, else they pop in early.
+- My stats (`js/profile.js`, key `profile:*` on device): a game counts once (`G.recorded`). Hint or Undo → "With Hint or Undo", unrated; guided game never counts; quitting / dealing over a game you moved in = loss, even when it sits behind "Resume last game" (after an online room `G` is null but `store.game` holds it). Daily = 3 Hard, no Undo, same deal everywhere (`Profile.daily.seed`); the Daily button resumes a paused Daily instead of re-dealing.
+- Coach "New to Coup?" offer covers the tab bar on a first visit; tests for returning players set `localStorage['coach-offer:coup-first']='1'`. `ui.edge.mjs` also blocks service workers (sw.js fetches bypass `page.route`, so the offline tests couldn't cut the net).
+- Hard's search is timed (600 ms): node tests that replay games set `AI.SEARCH.budgetMs = 1e9` (plus fewer worlds) so runs are repeatable. `ai.test.js` takes ~6 min; `NO_SEARCH=1` turns the search off.
+- `E.view` has `knownOut` (my set-aside cards in the 2-player deal; also inside `knownDeck`); the search keeps them out of the simulated deck.
 - Hard bots used to loop forever (Assassinate vs bluffed Contessa between two last-card players, ~1.5% of games). Fixed by making repeat attacks into a past block less attractive; `ai.test.js` guards it (failed on the old AI: 300 turns).
 
 ## Decisions
@@ -97,7 +102,8 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - 2-player deal: only the starting player gets 1 coin (rulebook reading).
 - Default "how much people bluff" = Some (0.3). Bot names Ava, Ben, Cleo, Dax, Esme.
 - Online: Opponents setting sets the seat count; host toggles each open seat friend/computer; open seats become computers at start; computers use the host's level. At game end all cards are revealed to everyone for the Review.
-- Online games don't count toward "Your wins".
+- Online games don't count toward "Your wins" (now My stats; old win counts were moved in once as unrated results).
+- Improve pass: Daily = you + 3 Hard; guided game = 2 Easy, fixed deal with Duke + Captain, you start; Undo button sits beside Hint/Quit; Help (Rules, Guided first game) is a Settings section; My stats + Daily buttons replace the "Your wins" line on the setup screen. Phone mid-table space left as is (opponents already show face-down cards). 7-8 players not added (needs the expansion's card counts).
 - Browser Back: closes an open sheet first, then returns to the previous tab (history entries per tab and sheet).
 - Design pass: the stage gets the space on phone (log shrinks), the stage glows blue whenever the move is yours (CSS `:has()`), game over shows the winner big and orange with the dead action grid hidden (kept in place), hand cards 78x109 on phone when there are 3 or fewer opponents, card subtitles hidden on small cards, laptop setup is wider with bigger fan cards, table setup fits 393px without scrolling, `.btn.small` 40px, `?` has a 42px hit area.
 - Sound & effects section sits between Variants and Your record in Settings; win confetti uses the winner's character colours plus orange/blue/white; "big" moments = you catch a bluff, or your challenged claim holds.
@@ -113,7 +119,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 - How the sounds actually sound and how loud they are on a phone (tests use a fake AudioContext; nobody has listened). Online sounds from other players' moves: same code path as local (snapshot events), but not run in a two-browser test.
 - With 4-5 opponents on phone, a speech bubble on a second-row opponent covers that opponent's name for a moment (from before the design pass; left alone).
 - Online with 3+ real people; host vanishing mid-game (handover is online.js's job, tested there).
-- Hard is only even with Medium head-to-head (tried 6 setting tweaks, all 46-54%); it's clearly best three-way and vs Easy.
+- Hard's look-ahead speed on a real phone (laptop: 2p ~19 ms, 4p ~51 ms, 6p ~207 ms a decision, worst ~0.9 s). Offline install only checked in headless WebKit (`tools/pwa-check.mjs`), not on an iPhone home screen.
 - A local game once stalled on a computer's turn with no error (desktop UI run, 2026-10-20, machine at 100% CPU from other agents). Root cause not found; a 3-second safety net now restarts the game loop (logs "game loop restarted" as a console warning, `window.__coup.revived` counts it).
 - After a friend reloads mid-game, online.js shows them "The server said no — you may not be in this room any more." once, though they rejoin and play on fine. That's in the shared `_online/online.js` (not ours to edit).
 - Table look: reviewer ran 2026-10-20 on the old screenshots; its small fixes are in, the bigger ones are listed under Decisions as Tim's call. Card proportions 63x88 are from sleeve listings (reasoned).
