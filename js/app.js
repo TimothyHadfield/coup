@@ -1395,7 +1395,7 @@
   }
   function offerTutorial() {
     if (!COACH || !tour || tour.seen() || COACH.offered('coup-first') || G) return;
-    COACH.offer({ id: 'coup-first', title: 'New to Coup?', text: 'Play a guided first game against two Easy computers.', yes: 'Teach me', no: 'No thanks', onYes: () => startTutorial() });
+    COACH.offer({ id: 'coup-first', title: 'New to Coup?', text: 'Play a guided first game against two Easy computers.', yes: 'Teach me', no: 'No thanks', onYes: () => startTutorial(), place: 'auto', avoid: ['#tab-play [data-new]'] });
   }
 
   const HELP = {

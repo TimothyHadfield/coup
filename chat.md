@@ -54,3 +54,6 @@
 - **Built:** Factions variant (engine, Easy/Medium/Hard, odds, online, Table tab ignores it), Videos in the Rules sheet, Confirm challenges switch, coach offer lifted above the tab bar; build 15.
 - **Verified:** factions.test 15/15 (12/15 failed on old code), engine 24, odds 9, table 4, online 6, ai 8; Factions ladder Hard>Medium>Easy (progress.md); ui.wave3 21 WebKit checks at 393/320/landscape/1280/1440 (offer covered the tab bar on the old live build: 645 vs 601); pwa-check 18/18; stamp OK.
 - **Open:** Tim's calls (generic names, concede option left out); Factions online with real people.
+
+## 2026-10-28 — wave-3 kit sweep (build 16)
+- game-coach 1.2.0 + game-pwa 1.4.0 copied; offer `place:'auto'` avoiding Deal, own phone top-offer css removed. Verified: engine 24, odds 9, table 4, factions 15, ai 8, ui.wave3 21/21, pwa-check 18/18, offer rects at 393/320/659×393, Settings 320 no overflow, 393 + laptop screenshots looked at.

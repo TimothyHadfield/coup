@@ -9,6 +9,7 @@ Feature-complete per the common brief + phase-2 brief. Waiting on Tim's look at 
 ## Status
 | Part | State |
 |---|---|
+| Wave-3 kit sweep (build 16, 2026-10-28) | Done. game-coach 1.2.0 (offer `place:'auto', avoid:['#tab-play [data-new]']`, local phone `.coach-offer{top;bottom:auto}` removed, laptop right-corner rule kept) + game-pwa 1.4.0; offer clear of tab bar + Deal at 393×659/320×568/659×393; Settings 320 no sideways scroll; no `<select>`. |
 | Engine (base + Inquisitor + official 2-player deal) | Done, 24 tests |
 | Odds (exact Bayes over unseen cards + claim evidence) | Done, 9 tests (brute-force match) |
 | Computers Easy/Medium/Hard | Done, measured (below) |

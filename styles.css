@@ -695,11 +695,10 @@ input[type=text] { background: var(--bg-soft); border: 1px solid var(--line); co
 #tab-play .me-row .side .row { flex-wrap: wrap; justify-content: flex-end; }
 
 /* ---- wave 3 (2026-10-28): Factions variant (side chips, Almshouse), first-visit offer above the tab bar */
-/* the shared coach kit's "New to Coup?" card sits at the top, over the decorative card fan, so it covers
-   neither the tab bar nor the Deal button (centred on phones, top-right corner on laptops) */
-.coach-offer { top: calc(10px + env(safe-area-inset-top)); bottom: auto; }
+/* the "New to Coup?" card: coach 1.2.0 place:'auto' picks top/bottom so it covers neither the tab bar nor
+   Deal; on laptops it keeps the right-hand corner */
 @media (min-width: 900px) {
-  .coach-offer { top: 16px; right: 16px; left: auto; transform: none; }
+  .coach-offer { right: 16px; left: auto; transform: none; }
   .coach-offer.enter { animation-name: coup-offer-in; }
 }
 @keyframes coup-offer-in { from { opacity: 0; transform: translateY(-10px); } }
