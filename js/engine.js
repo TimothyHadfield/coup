@@ -35,7 +35,17 @@
  *   twoPlayerDeal: true (2 players only) -> the official 2-player setup: each
  *                        player picks 1 card from a set of all 5 characters,
  *                        the other 4 go out of play face down; a third set is
- *                        shuffled, each gets 1, the last 3 are the deck.
+   *                        shuffled, each gets 1, the last 3 are the deck.
+ *   factions: true    -> Loyalists vs Reformists (the Reformation expansion's rules):
+ *                        sides alternate round the table from the starting
+ *                        player; while both sides are in play nobody may Coup,
+ *                        Assassinate, Steal from, Examine or block the Foreign aid
+ *                        of their own side. Convert: pay 1 (yourself) or 2
+ *                        (anyone else) into the Almshouse to flip a side.
+ *                        Embezzle: claim you have NO Duke and take the Almshouse.
+ *                        Challenged: a Duke-holder loses a card; otherwise the
+ *                        embezzler shows both cards, redraws them, and the
+ *                        challenger loses a card.
  * ==========================================================================*/
 (function (root) {
   'use strict';
@@ -52,8 +62,12 @@
     steal:       { label: 'Steal',       claim: 'Captain',    cost: 0, target: true,  blockBy: ['Captain', 'Ambassador'] },
     exchange:    { label: 'Exchange',    claim: 'Ambassador', cost: 0, target: false, blockBy: [] },
     examine:     { label: 'Examine',     claim: 'Inquisitor', cost: 0, target: true,  blockBy: [] },
+    convert:     { label: 'Convert',     claim: null,         cost: 1, target: true,  blockBy: [], factions: true },
+    embezzle:    { label: 'Embezzle',    claim: null,         cost: 0, target: false, blockBy: [], factions: true, denies: 'Duke' },
   };
-  const ACTION_ORDER = ['income', 'foreign_aid', 'tax', 'steal', 'assassinate', 'exchange', 'examine', 'coup'];
+  const ACTION_ORDER = ['income', 'foreign_aid', 'tax', 'steal', 'assassinate', 'exchange', 'examine', 'convert', 'embezzle', 'coup'];
+  // Factions: these actions may not be aimed at your own side while both sides are in play.
+  const ATTACKS = { coup: 1, assassinate: 1, steal: 1, examine: 1 };
 
   // The rule set in force: which characters exist and who does what.
   function ruleSet(rules) {
@@ -61,6 +75,7 @@
     return {
       inquisitor: inq,
       twoPlayerDeal: !!(rules && rules.twoPlayerDeal),
+      factions: !!(rules && rules.factions),
       chars: inq ? INQ_CHARS.slice() : BASE_CHARS.slice(),
       exchanger: inq ? 'Inquisitor' : 'Ambassador',
       stealBlockers: inq ? ['Captain', 'Inquisitor'] : ['Captain', 'Ambassador'],
@@ -75,8 +90,16 @@
     return d;
   }
   function actionsInPlay(s) {
-    return ACTION_ORDER.filter((a) => a !== 'examine' || s.rules.inquisitor);
+    return ACTION_ORDER.filter((a) => (a !== 'examine' || s.rules.inquisitor) && (!ACTIONS[a].factions || s.rules.factions));
   }
+  // Factions: are a and b on the same side while both sides still have someone in play?
+  function sameSide(s, a, b) {
+    if (!s.rules.factions || a === b) return false;
+    const pa = s.players[a], pb = s.players[b];
+    if (pa.side !== pb.side) return false;
+    return s.players.some((pl) => alive(pl) && pl.side !== pa.side);
+  }
+  const convertCost = (p, t) => (p === t ? 1 : 2);
 
   // ---- seeded random numbers (mulberry32), state kept inside the game ----
   function rand(s) {
@@ -116,7 +139,7 @@
     if (n !== 2) rules.twoPlayerDeal = false;
     const s = {
       n, rs: (opts.seed >>> 0) || 1, turn: 0, turnNo: 0, rules,
-      players: [], deck: [], out: [], events: [], loseQueue: [],
+      players: [], deck: [], out: [], events: [], loseQueue: [], reserve: 0,
       ctx: null, pending: null, winner: -1,
     };
     const first = opts.first == null || opts.first < 0 || opts.first >= n ? Math.floor(rand(s) * n) : opts.first;
@@ -131,6 +154,11 @@
       });
     }
     s.turn = first;
+    if (rules.factions) {
+      // the starting player's side is picked at random; everyone else takes the other side from the player before them
+      const s0 = rand(s) < 0.5 ? 0 : 1;
+      for (let k = 0; k < n; k++) s.players[(first + k) % n].side = (s0 + k) % 2;
+    }
     if (rules.twoPlayerDeal) {
       // three sets of one-of-each; two are offered, the third makes the hand + deck
       s.sets = [rules.chars.slice(), rules.chars.slice(), shuffle(s, rules.chars.slice())];
@@ -163,13 +191,17 @@
     const targets = orderAfter(s, p, p);
     const out = [];
     if (pl.coins >= 10) {
-      for (const t of targets) out.push({ action: 'coup', target: t });
+      for (const t of targets) if (!sameSide(s, p, t)) out.push({ action: 'coup', target: t });
       return out;
     }
     for (const a of actionsInPlay(s)) {
       const def = ACTIONS[a];
+      if (a === 'convert') {
+        for (const t of [p].concat(targets)) if (pl.coins >= convertCost(p, t)) out.push({ action: a, target: t });
+        continue;
+      }
       if (pl.coins < def.cost) continue;
-      if (def.target) for (const t of targets) out.push({ action: a, target: t });
+      if (def.target) { for (const t of targets) if (!(ATTACKS[a] && sameSide(s, p, t))) out.push({ action: a, target: t }); }
       else out.push({ action: a, target: -1 });
     }
     return out;
@@ -223,7 +255,8 @@
           if (c.oi < c.order.length) {
             const p = c.order[c.oi];
             if (!alive(s.players[p])) { c.oi++; break; }
-            s.pending = { kind: 'challenge', p, claimant: c.actor, char: def.claim, about: 'action', action: c.action, actor: c.actor, target: c.target };
+            s.pending = { kind: 'challenge', p, claimant: c.actor, char: def.claim || def.denies, about: 'action', action: c.action, actor: c.actor, target: c.target };
+            if (def.denies) s.pending.denies = true;
             return s;
           }
           c.stage = 'block'; c.order = []; c.oi = 0; c.blockOrderSet = false;
@@ -234,7 +267,7 @@
           if (c.failed || !def.blockBy.length) { c.stage = 'resolve'; break; }
           if (!c.blockOrderSet) {
             c.blockOrderSet = true;
-            if (c.action === 'foreign_aid') c.order = orderAfter(s, c.actor, c.actor);
+            if (c.action === 'foreign_aid') c.order = orderAfter(s, c.actor, c.actor).filter((p) => !sameSide(s, p, c.actor));
             else c.order = alive(s.players[c.target]) ? [c.target] : [];
             c.oi = 0;
           }
@@ -312,6 +345,14 @@
       case 'income': actor.coins += 1; log(s, { t: 'gain', p: c.actor, n: 1, action: 'income' }); break;
       case 'foreign_aid': actor.coins += 2; log(s, { t: 'gain', p: c.actor, n: 2, action: 'foreign_aid' }); break;
       case 'tax': actor.coins += 3; log(s, { t: 'gain', p: c.actor, n: 3, action: 'tax' }); break;
+      case 'embezzle': { const k = s.reserve; s.reserve = 0; actor.coins += k; log(s, { t: 'gain', p: c.actor, n: k, action: 'embezzle' }); break; }
+      case 'convert': {
+        const tg = s.players[c.target];
+        if (!alive(tg)) break;
+        tg.side = 1 - tg.side;
+        log(s, { t: 'convert', p: c.actor, target: c.target, side: tg.side });
+        break;
+      }
       case 'steal': {
         const tg = s.players[c.target];
         const k = Math.min(2, tg.coins);
@@ -344,6 +385,23 @@
   // Challenge outcome: claimant proves the card or loses one.
   function resolveChallenge(s, challenger, claimant, char, about) {
     const pl = s.players[claimant];
+    if (about === 'denies') {
+      // Embezzle: the claim is "I have no Duke"
+      const has = pl.cards.some((cd) => !cd.dead && cd.c === char);
+      log(s, { t: 'challenge', by: challenger, of: claimant, char, about: 'action', denies: true, truth: !has });
+      if (has) { s.loseQueue.push({ p: claimant, reason: 'bluff' }); return false; }
+      // show every hidden card, shuffle them into the deck and draw as many new ones
+      const hi = hiddenIdx(pl);
+      const shown = hi.map((i) => pl.cards[i].c);
+      log(s, { t: 'reveal', p: claimant, chars: shown.slice() });
+      for (const c of shown) s.deck.push(c);
+      shuffle(s, s.deck);
+      deckTouched(s);
+      handChanged(s, claimant);
+      for (const i of hi) pl.cards[i] = { c: s.deck.pop(), dead: false };
+      s.loseQueue.push({ p: challenger, reason: 'challenge' });
+      return true;
+    }
     const idx = pl.cards.findIndex((cd) => !cd.dead && cd.c === char);
     if (idx >= 0) {
       log(s, { t: 'challenge', by: challenger, of: claimant, char, about, truth: true });
@@ -394,18 +452,23 @@
         const def = actionDef(s, d.action);
         c.action = d.action;
         c.target = def.target ? tgt : -1;
-        pl.coins -= def.cost;
-        c.paid = def.cost;
-        const truth = def.claim ? hiddenChars(pl).includes(def.claim) : null;
-        log(s, { t: 'action', p: pd.p, action: d.action, target: c.target, claim: def.claim, _true: truth });
-        if (def.claim) { c.stage = 'challengeAction'; c.order = orderAfter(s, pd.p, pd.p); c.oi = 0; }
+        const cost = d.action === 'convert' ? convertCost(pd.p, tgt) : def.cost;
+        pl.coins -= cost;
+        c.paid = cost;
+        if (d.action === 'convert') { s.reserve = (s.reserve || 0) + cost; c.paid = 0; }
+        const truth = def.claim ? hiddenChars(pl).includes(def.claim) : def.denies ? !hiddenChars(pl).includes(def.denies) : null;
+        const ev = { t: 'action', p: pd.p, action: d.action, target: c.target, claim: def.claim, _true: truth };
+        if (def.denies) ev.denies = def.denies;
+        if (d.action === 'convert') ev.n = cost;
+        log(s, ev);
+        if (def.claim || def.denies) { c.stage = 'challengeAction'; c.order = orderAfter(s, pd.p, pd.p); c.oi = 0; }
         else { c.stage = 'block'; c.order = []; c.oi = 0; c.blockOrderSet = false; }
         break;
       }
       case 'challenge': {
         if (!d.challenge) { c.oi++; break; }
         if (pd.about === 'action') {
-          const proved = resolveChallenge(s, pd.p, pd.claimant, pd.char, 'action');
+          const proved = resolveChallenge(s, pd.p, pd.claimant, pd.char, pd.denies ? 'denies' : 'action');
           if (!proved) {
             c.failed = true;
             if (c.paid) { s.players[c.actor].coins += c.paid; log(s, { t: 'refund', p: c.actor, n: c.paid }); c.paid = 0; }
@@ -496,9 +559,9 @@
     const pend = s.pending && s.pending.p === p ? s.pending : (s.pending ? publicPending(s.pending) : null);
     return {
       me: p, n: s.n, turn: s.turn, winner: s.winner, rules: s.rules,
-      deckSize: s.deck.length,
+      deckSize: s.deck.length, reserve: s.reserve || 0,
       players: s.players.map((pl, i) => ({
-        name: pl.name, coins: pl.coins, alive: alive(pl),
+        name: pl.name, coins: pl.coins, alive: alive(pl), side: pl.side,
         hidden: hiddenIdx(pl).length,
         dead: pl.cards.filter((cd) => cd.dead).map((cd) => cd.c),
       })),
@@ -512,7 +575,7 @@
   }
   function publicPending(pd) {
     const o = { kind: pd.kind, p: pd.p };
-    for (const k of ['claimant', 'char', 'about', 'action', 'actor', 'target', 'chars', 'reason', 'by'])
+    for (const k of ['claimant', 'char', 'about', 'action', 'actor', 'target', 'chars', 'reason', 'by', 'denies'])
       if (pd[k] !== undefined && !(pd.kind === 'examine' && k === 'char')) o[k] = pd[k];
     return o;
   }
@@ -547,7 +610,7 @@
   const api = {
     CHARS: BASE_CHARS, BASE_CHARS, INQ_CHARS, ACTIONS, ACTION_ORDER, ruleSet, actionDef,
     newGame, act, apply, view: viewFor, viewFor, advance, legalActions, publicEvents, countCards,
-    alive, hiddenChars, hiddenIdx, orderAfter, rand, shuffle,
+    alive, hiddenChars, hiddenIdx, orderAfter, rand, shuffle, sameSide, actionsInPlay,
   };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   else root.CoupEngine = api;

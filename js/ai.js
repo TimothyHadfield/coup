@@ -38,6 +38,7 @@
     for (const e of view.events) {
       if (e.t === 'action' && e.claim) claims[e.p][e.claim] = 1;
       else if (e.t === 'block') claims[e.p][e.char] = 1;
+      else if (e.t === 'challenge' && e.denies) { if (e.truth) { claims[e.of] = {}; caught[e.of] = {}; } else claims[e.of][e.char] = 1; }
       else if (e.t === 'challenge') { delete claims[e.of][e.char]; if (!e.truth) caught[e.of][e.char] = 1; }
       else if (e.t === 'exchange' || e.t === 'forced') { claims[e.p] = {}; caught[e.p] = {}; }
       else if (e.t === 'lose') delete claims[e.p][e.char];
@@ -55,7 +56,7 @@
     });
   }
   const VAL = { Duke: 5, Captain: 4, Assassin: 4.2, Contessa: 3.4, Ambassador: 2.6, Inquisitor: 3 };
-  const NAME = { income: 'Income', foreign_aid: 'Foreign aid', tax: 'Tax', steal: 'Steal', assassinate: 'Assassinate', exchange: 'Exchange', coup: 'Coup', examine: 'Examine' };
+  const NAME = { income: 'Income', foreign_aid: 'Foreign aid', tax: 'Tax', steal: 'Steal', assassinate: 'Assassinate', exchange: 'Exchange', coup: 'Coup', examine: 'Examine', convert: 'Convert', embezzle: 'Embezzle' };
 
   function ctxOf(view, level, rnd, rules) {
     const P = PARAMS[level];
@@ -190,13 +191,51 @@
       for (const t of targets('examine')) add('examine', t, 0.8, 'Inquisitor', 'Examine to learn a card.');
     }
 
+    // Factions: Convert to get out of the line of fire (whoever can attack you, weighted by what they can afford),
+    // Embezzle the Almshouse when you hold no Duke (with a Duke it is a bluff).
+    if (rules && rules.factions) {
+      const sides = view.players.map((p) => p.side);
+      const live = view.players.map((p, i) => (p.alive ? i : -1)).filter((i) => i >= 0);
+      const danger = (sd) => {
+        const both = new Set(live.map((i) => sd[i])).size > 1;
+        let d = 0;
+        for (const i of x.opps) {
+          if (both && sd[i] === sd[x.me]) continue;
+          const c = view.players[i].coins;
+          d += c >= 7 ? 3 : c >= 3 ? 1.2 : 0.4;
+        }
+        return d;
+      };
+      const d0 = danger(sides);
+      for (const t of targets('convert')) {
+        const sd = sides.slice(); sd[t] = 1 - sd[t];
+        const cost = t === x.me ? 1 : 2;
+        const nm = t === x.me ? 'yourself' : view.players[t].name;
+        add('convert', t, (d0 - danger(sd)) * (P.smart ? 1.1 : 0.5) - cost * 0.9 + 0.3, null,
+          `Convert ${nm} (${cost} coin${cost > 1 ? 's' : ''}): fewer players can attack you.`);
+      }
+      if (legal.some((l) => l.action === 'embezzle')) {
+        const r = view.reserve || 0;
+        const dukeBluff = x.mine.includes('Duke');
+        if (r > 0) cands.push({ action: 'embezzle', target: -1, score: r * 1.05, claim: null, denies: true, dukeBluff,
+          why: dukeBluff ? `Embezzle the Almshouse's ${r}: a bluff, you hold a Duke.` : `Embezzle the Almshouse's ${r}: you hold no Duke, so a challenge only helps you.` });
+      }
+    }
+
     if (withCands && coins >= 7) for (const t of targets('coup')) add('coup', t, 6 + threat(x, t) * 0.1, null, `Coup ${view.players[t].name}: it can't be blocked or challenged.`);
     let best = null;
     const scored = [];
+    // Embezzling while holding a Duke: the table calls it more often once you have claimed a Duke yourself
+    const embezzleCost = () => {
+      if (P.bluff <= 0) return 99;
+      const r = Math.max(0.1, Math.min(0.85, (x.myClaims.has('Duke') ? 0.55 : 0.15) + (P.risk || 0.1) * x.opps.length));
+      return (r * myLossCost(x)) / P.bluff;
+    };
     for (const c of cands) {
-      const cost = claimCost(c.claim);
+      const cost = c.denies ? (c.dukeBluff ? embezzleCost() : 0) : claimCost(c.claim);
       if (cost >= 99) continue;
       if (level === 'easy' && c.claim && !x.mine.includes(c.claim) && rnd() > P.bluff) continue;
+      if (level === 'easy' && c.dukeBluff && rnd() > P.bluff) continue;
       const s = c.score - cost + (rnd() - 0.5) * P.noise;
       const o = Object.assign({ s, cost }, c);
       scored.push(o);
@@ -214,6 +253,17 @@
     const P = x.P;
     const c = pend.char;
     const q = pend.claimant;
+    if (pend.denies) {
+      // Embezzle: they claim to hold NO Duke. Catch them with one and they lose a card; if they're honest you do.
+      if (x.unseen(c) === 0) return { d: { challenge: false }, why: `Every ${c} is accounted for: they can't hold one.`, pTrue: 1 };
+      const pT = 1 - (P.odds === 'none' ? 0.3 : x.has(q, c));
+      if (level === 'easy') return { d: { challenge: rnd() < 0.07 }, why: '', pTrue: pT };
+      let g = killValue(x, q) + (view.reserve || 0) * 0.5;
+      if (x.opps.length > 1) g *= 0.75;
+      const ev = (1 - pT) * g - pT * myLossCost(x) * P.caution;
+      const pct = Math.round(pT * 100);
+      return { d: { challenge: ev > 0 }, why: ev > 0 ? `Only ${pct}% likely they have no Duke. Challenge.` : `${pct}% likely they really have no Duke. Let it go.`, pTrue: pT };
+    }
     if (x.unseen(c) === 0) {
       const certain = level !== 'easy' || rnd() < 0.6;
       return { d: { challenge: certain }, why: `Every ${c} is accounted for: it must be a bluff.`, pTrue: 0 };
@@ -418,17 +468,17 @@
       players: view.players.map((pl, i) => {
         const dead = pl.dead.map((c) => ({ c, dead: true }));
         const live = i === view.me ? view.myCards.filter((c) => !c.dead).map((c) => ({ c: c.c, dead: false })) : (hands[i] || []).map((c) => ({ c, dead: false }));
-        return { name: pl.name, coins: pl.coins, cards: i === view.me ? view.myCards.map((c) => ({ c: c.c, dead: c.dead })) : live.concat(dead), knownDeck: i === view.me ? known.slice() : [], knownOut: [], peeks: i === view.me ? (view.peeks || []).slice() : [] };
+        return { name: pl.name, coins: pl.coins, side: pl.side, cards: i === view.me ? view.myCards.map((c) => ({ c: c.c, dead: c.dead })) : live.concat(dead), knownDeck: i === view.me ? known.slice() : [], knownOut: [], peeks: i === view.me ? (view.peeks || []).slice() : [] };
       }),
-      deck, out, events: view.events.slice(), loseQueue: [], ctx: null, pending: null, winner: -1,
+      deck, out, events: view.events.slice(), loseQueue: [], ctx: null, pending: null, winner: -1, reserve: view.reserve || 0,
     };
     return s;
   }
   function cloneWorld(s) {
     return {
       n: s.n, rs: s.rs, turn: s.turn, turnNo: s.turnNo, rules: s.rules,
-      players: s.players.map((pl) => ({ name: pl.name, coins: pl.coins, cards: pl.cards.map((c) => ({ c: c.c, dead: c.dead })), knownDeck: pl.knownDeck.slice(), knownOut: [], peeks: pl.peeks.slice() })),
-      deck: s.deck.slice(), out: s.out.slice(), events: s.events.slice(), loseQueue: [], ctx: null, pending: null, winner: -1,
+      players: s.players.map((pl) => ({ name: pl.name, coins: pl.coins, side: pl.side, cards: pl.cards.map((c) => ({ c: c.c, dead: c.dead })), knownDeck: pl.knownDeck.slice(), knownOut: [], peeks: pl.peeks.slice() })),
+      deck: s.deck.slice(), out: s.out.slice(), events: s.events.slice(), loseQueue: [], ctx: null, pending: null, winner: -1, reserve: s.reserve || 0,
     };
   }
   // A cut-off game: each player's chance from cards in hand and coins (a card is worth about 7 coins).
@@ -500,7 +550,7 @@
     const r = searchAction(view, legal, rnd, rules, pickSet.map((c) => ({ action: c.action, target: c.target })));
     const best = pickSet[r.k];
     const mine = view.myCards.filter((c) => !c.dead).map((c) => c.c);
-    const bluff = best.claim && !mine.includes(best.claim);
+    const bluff = (best.claim && !mine.includes(best.claim)) || (best.denies && mine.includes('Duke'));
     const why = (best.why || NAME[best.action]) + (bluff ? ' (a bluff)' : '') + ` Played out, it wins about ${Math.round(r.win * 100)}% of the time.`;
     return { d: { action: best.action, target: best.target }, why };
   }

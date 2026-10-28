@@ -55,11 +55,17 @@
       switch (e.t) {
         case 'action':
           if (e.claim) E[e.p].push({ chars: [e.claim], lh: 1, ln: bOf(e.p) });
+          else if (e.denies) E[e.p].push({ chars: [e.denies], lh: bOf(e.p), ln: 1 });   // Embezzle: "I have no Duke"
           break;
         case 'block':
           E[e.p].push({ chars: [e.char], lh: 1, ln: bOf(e.p) });
           break;
         case 'challenge':
+          if (e.denies) {
+            if (e.truth) E[e.of] = [];                                  // no Duke: both cards shown and redrawn
+            else E[e.of].push({ chars: [e.char], lh: 1, ln: 0 });       // caught holding a Duke
+            break;
+          }
           if (e.truth) dropPositive(e.of, e.char);
           else { dropPositive(e.of, e.char); E[e.of].push({ chars: [e.char], lh: 0, ln: 1 }); }
           break;
