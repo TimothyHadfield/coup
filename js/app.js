@@ -908,7 +908,7 @@
   let netBusy = false;
   async function netRoom() {
     if (NET) return NET;
-    const mod = await import(new URL('js/online.js?v=1', document.baseURI).href);
+    const mod = await import(new URL('js/online.js?v=a3d0418b', document.baseURI).href);
     NET = mod.createOnline({ game: window.CoupGame.game, gameId: 'coup', botDelayMs: SPEED[S().speed] });
     NET.on('change', onSnap);
     NET.on('error', (msg) => toast(netMsg(msg && msg.message || msg)));
